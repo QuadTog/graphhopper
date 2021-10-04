@@ -19,7 +19,6 @@ package com.graphhopper.search;
 
 import com.graphhopper.storage.DataAccess;
 import com.graphhopper.storage.Directory;
-import com.graphhopper.storage.Storable;
 import com.graphhopper.util.BitUtil;
 import com.graphhopper.util.Helper;
 
@@ -28,7 +27,7 @@ import java.util.*;
 /**
  * @author Peter Karich
  */
-public class StringIndex implements Storable<StringIndex> {
+public class StringIndex {
     private static final long EMPTY_POINTER = 0, START_POINTER = 1;
     // Store the key index in 2 bytes. Use negative values for marking the value as duplicate.
     static final int MAX_UNIQUE_KEYS = (1 << 15);
@@ -51,17 +50,12 @@ public class StringIndex implements Storable<StringIndex> {
     private long lastEntryPointer = -1;
     private Map<String, String> lastEntryMap;
 
-    public StringIndex(Directory dir) {
-        this(dir, 1000);
-    }
-
     /**
      * Specify a larger cacheSize to reduce disk usage. Note that this increases the memory usage of this object.
      */
-    public StringIndex(Directory dir, final int cacheSize) {
-        keys = dir.find("string_index_keys");
-        keys.setSegmentSize(10 * 1024);
-        vals = dir.find("string_index_vals");
+    public StringIndex(Directory dir, final int cacheSize, final int segmentSize) {
+        keys = dir.create("string_index_keys", segmentSize);
+        vals = dir.create("string_index_vals", segmentSize);
         smallCache = new LinkedHashMap<String, Long>(cacheSize, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, Long> entry) {
@@ -70,7 +64,6 @@ public class StringIndex implements Storable<StringIndex> {
         };
     }
 
-    @Override
     public StringIndex create(long initBytes) {
         keys.create(initBytes);
         vals.create(initBytes);
@@ -80,7 +73,6 @@ public class StringIndex implements Storable<StringIndex> {
         return this;
     }
 
-    @Override
     public boolean loadExisting() {
         if (vals.loadExisting()) {
             if (!keys.loadExisting())
@@ -301,7 +293,6 @@ public class StringIndex implements Storable<StringIndex> {
         return bytes;
     }
 
-    @Override
     public void flush() {
         keys.ensureCapacity(2);
         keys.setShort(0, (short) keysInMem.size());
@@ -322,29 +313,17 @@ public class StringIndex implements Storable<StringIndex> {
         vals.flush();
     }
 
-    @Override
     public void close() {
         keys.close();
         vals.close();
     }
 
-    @Override
     public boolean isClosed() {
         return vals.isClosed() && keys.isClosed();
     }
 
-    public void setSegmentSize(int segments) {
-        keys.setSegmentSize(segments);
-        vals.setSegmentSize(segments);
-    }
-
-    @Override
     public long getCapacity() {
         return vals.getCapacity() + keys.getCapacity();
     }
 
-    public void copyTo(StringIndex stringIndex) {
-        keys.copyTo(stringIndex.keys);
-        vals.copyTo(stringIndex.vals);
-    }
 }

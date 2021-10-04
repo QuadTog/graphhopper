@@ -19,9 +19,9 @@ package com.graphhopper.coll;
 
 import com.graphhopper.storage.DataAccess;
 import com.graphhopper.storage.RAMDirectory;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * @author Peter Karich
@@ -59,7 +59,7 @@ public class OSMIDMapTest {
 
     @Test
     public void testBinSearch() {
-        DataAccess da = new RAMDirectory().find("");
+        DataAccess da = new RAMDirectory().create("");
         da.create(100);
 
         da.setInt(0 * 4, 1);

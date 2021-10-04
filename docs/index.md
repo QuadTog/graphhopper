@@ -37,7 +37,7 @@ The elevation configuration is separately documented [here](./core/elevation.md)
 
 [The quickstart](./core/quickstart-from-source.md) is an introduction for developers. Explains git checkout, IDE setup and commands for setting up a GraphHopper server.
 
-Find all changes in previous and current versions in the [changelogs](../core/files/changelog.txt).
+Find all changes in previous and current versions in the [changelogs](../CHANGELOG.md).
 
 #### Contribute
 
@@ -56,7 +56,7 @@ Various topics are explained in more detail separately:
  * [Speed Mode](./core/ch.md): Details about speeding up the route calculations via [Contraction Hierarchies](http://en.wikipedia.org/wiki/Contraction_hierarchies).
  * [Low level API](./core/low-level-api.md): Instructions how to use GraphHopper as a Java library.
  * [Create new FlagEncoder](./core/create-new-flagencoder.md): Documentation to create new routing profiles to influence which ways to favor and how the track-time is calculated.
- * [Spatial Rules](./core/spatial-rules.md): Instruction on how to use and create new SpatialRules. SpatialRules are used to enforce country-specific routing rules.
+ * [Custom Areas and Country Rules](./core/custom-areas-and-country-rules.md): Instructions on how to on how to use and create new SpatialRules. SpatialRules are used to enforce country-specific routing rules.
  * [Turn Restrictions](./core/turn-restrictions.md): Details on how to enable and use turn restrictions.
  * [Isochrone generation in Java](./isochrone/java.md): Instruction on how to create isochrones using the low-level Java API.
  * [Postgis query script](../core/files/postgis)

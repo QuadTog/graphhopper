@@ -27,42 +27,38 @@ import com.graphhopper.matching.EdgeMatch;
 import com.graphhopper.matching.MapMatching;
 import com.graphhopper.matching.MatchResult;
 import com.graphhopper.matching.State;
-import com.graphhopper.routing.util.CarFlagEncoder;
-import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 
 import static com.graphhopper.http.MapMatchingTest.fetchStreets;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Peter Karich
  */
 public class MapMatching2Test {
     private static final String GH_LOCATION = "../target/mapmatchingtest2-gh";
-    private XmlMapper xmlMapper = new XmlMapper();
+    private final XmlMapper xmlMapper = new XmlMapper();
 
-    @Before
-    @After
+    @BeforeEach
+    @AfterEach
     public void clean() {
         Helper.removeDir(new File(GH_LOCATION));
     }
 
     @Test
     public void testIssue13() throws IOException {
-        CarFlagEncoder encoder = new CarFlagEncoder();
         GraphHopper hopper = new GraphHopper();
         hopper.setOSMFile("../map-matching/files/map-issue13.osm.gz");
         hopper.setGraphHopperLocation(GH_LOCATION);
-        hopper.setEncodingManager(EncodingManager.create(encoder));
         hopper.setProfiles(new Profile("my_profile").setVehicle("car").setWeighting("fastest"));
         hopper.getLMPreparationHandler().setLMProfiles(new LMProfile("my_profile"));
         hopper.importOrLoad();
@@ -75,8 +71,7 @@ public class MapMatching2Test {
         // make sure no virtual edges are returned
         int edgeCount = hopper.getGraphHopperStorage().getAllEdges().length();
         for (EdgeMatch em : mr.getEdgeMatches()) {
-            assertTrue("result contains virtual edges:" + em.getEdgeState().toString(),
-                    em.getEdgeState().getEdge() < edgeCount);
+            assertTrue(em.getEdgeState().getEdge() < edgeCount, "result contains virtual edges:" + em.getEdgeState().toString());
             validateEdgeMatch(em);
         }
 
@@ -86,11 +81,9 @@ public class MapMatching2Test {
 
     @Test
     public void testIssue70() throws IOException {
-        CarFlagEncoder encoder = new CarFlagEncoder();
         GraphHopper hopper = new GraphHopper();
         hopper.setOSMFile("../map-matching/files/issue-70.osm.gz");
         hopper.setGraphHopperLocation(GH_LOCATION);
-        hopper.setEncodingManager(EncodingManager.create(encoder));
         hopper.setProfiles(new Profile("my_profile").setVehicle("car").setWeighting("fastest"));
         hopper.getLMPreparationHandler().setLMProfiles(new LMProfile("my_profile"));
         hopper.importOrLoad();
@@ -108,11 +101,9 @@ public class MapMatching2Test {
 
     @Test
     public void testIssue127() throws IOException {
-        CarFlagEncoder encoder = new CarFlagEncoder();
         GraphHopper hopper = new GraphHopper();
         hopper.setOSMFile("../map-matching/files/map-issue13.osm.gz");
         hopper.setGraphHopperLocation(GH_LOCATION);
-        hopper.setEncodingManager(EncodingManager.create(encoder));
         hopper.setProfiles(new Profile("my_profile").setVehicle("car").setWeighting("fastest"));
         hopper.getLMPreparationHandler().setLMProfiles(new LMProfile("my_profile"));
         hopper.importOrLoad();
@@ -126,8 +117,7 @@ public class MapMatching2Test {
         // make sure no virtual edges are returned
         int edgeCount = hopper.getGraphHopperStorage().getAllEdges().length();
         for (EdgeMatch em : mr.getEdgeMatches()) {
-            assertTrue("result contains virtual edges:" + em.getEdgeState().toString(),
-                    em.getEdgeState().getEdge() < edgeCount);
+            assertTrue(em.getEdgeState().getEdge() < edgeCount, "result contains virtual edges:" + em.getEdgeState().toString());
             validateEdgeMatch(em);
         }
 

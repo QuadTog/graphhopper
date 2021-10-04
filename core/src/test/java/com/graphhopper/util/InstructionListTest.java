@@ -29,15 +29,15 @@ import com.graphhopper.routing.weighting.ShortestWeighting;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.GraphBuilder;
 import com.graphhopper.storage.NodeAccess;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * @author Peter Karich
@@ -49,7 +49,7 @@ public class InstructionListTest {
     private EncodingManager carManager;
     private FlagEncoder carEncoder;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         carEncoder = new CarFlagEncoder();
         carManager = EncodingManager.create(carEncoder);
@@ -296,6 +296,7 @@ public class InstructionListTest {
     @Test
     public void testEmptyList() {
         Graph g = new GraphBuilder(carManager).create();
+        g.getNodeAccess().setNode(1, 0, 0);
         ShortestWeighting weighting = new ShortestWeighting(carEncoder);
         Path p = new Dijkstra(g, weighting, tMode).calcPath(0, 1);
         InstructionList il = InstructionsFromEdges.calcInstructions(p, g, weighting, carManager, usTR);
@@ -347,8 +348,8 @@ public class InstructionListTest {
             List<Double> e = expected.get(i);
             List<Double> wasE = actual.get(i);
             for (int j = 0; j < e.size(); j++) {
-                assertEquals("at index " + i + " value index " + j + " and value " + e + " vs " + wasE + "\n" + "Expected: " + expected + "\n" + "Actual: " + actual
-                        , e.get(j), wasE.get(j), 1e-5d);
+                assertEquals(e.get(j), wasE.get(j), 1e-5d, "at index " + i + " value index " + j + " and value " + e + " vs " + wasE + "\n" + "Expected: " + expected + "\n" + "Actual: " + actual
+                );
             }
         }
     }

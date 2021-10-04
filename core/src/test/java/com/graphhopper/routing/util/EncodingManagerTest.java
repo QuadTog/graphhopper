@@ -24,11 +24,11 @@ import com.graphhopper.routing.ev.EnumEncodedValue;
 import com.graphhopper.routing.ev.Roundabout;
 import com.graphhopper.routing.ev.RouteNetwork;
 import com.graphhopper.storage.IntsRef;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Peter Karich
@@ -78,21 +78,16 @@ public class EncodingManagerTest {
             EncodingManager.create(foot, foot);
             fail("There should have been an exception");
         } catch (Exception ex) {
-            assertEquals("You must not register a FlagEncoder (foot) twice or for two EncodingManagers!", ex.getMessage());
+            assertEquals("FlagEncoder already exists: foot", ex.getMessage());
         }
     }
 
     @Test
-    public void testToDetailsStringIncludesEncoderVersionNumber() {
+    public void testToDetailsString() {
         FlagEncoder encoder = new AbstractFlagEncoder(1, 2.0, 0) {
             @Override
             public TransportationMode getTransportationMode() {
                 return TransportationMode.BIKE;
-            }
-
-            @Override
-            public int getVersion() {
-                return 10;
             }
 
             @Override
@@ -118,7 +113,7 @@ public class EncodingManagerTest {
 
         EncodingManager subject = EncodingManager.create(encoder);
 
-        assertEquals("new_encoder|my_properties|version=10", subject.toFlagEncodersAsString());
+        assertEquals("new_encoder|my_properties", subject.toFlagEncodersAsString());
     }
 
     @Test
@@ -169,7 +164,7 @@ public class EncodingManagerTest {
         MountainBikeFlagEncoder mtbEncoder = new MountainBikeFlagEncoder();
         EncodingManager manager = EncodingManager.create(bikeEncoder, mtbEncoder);
 
-        // relation code for network rcn is VERY_NICE for bike and PREFER for mountainbike
+        // relation code for network rcn is NICE for bike and PREFER for mountainbike
         osmRel.setTag("route", "bicycle");
         osmRel.setTag("network", "rcn");
         IntsRef relFlags = manager.handleRelationTags(osmRel, manager.createRelationFlags());
@@ -177,7 +172,7 @@ public class EncodingManagerTest {
         manager.acceptWay(osmWay, map);
         IntsRef edgeFlags = manager.handleWayTags(osmWay, map, relFlags);
 
-        // bike: uninfluenced speed for grade but via network => VERY_NICE                
+        // bike: uninfluenced speed for grade but via network => NICE
         // mtb: uninfluenced speed only PREFER
         assertTrue(bikeEncoder.priorityEnc.getDecimal(false, edgeFlags)
                 > mtbEncoder.priorityEnc.getDecimal(false, edgeFlags));
@@ -221,24 +216,24 @@ public class EncodingManagerTest {
     @Test
     public void testSupportFords() {
         // 1) no encoder crossing fords
-        String flagEncodersStr = "car,bike,foot";
-        EncodingManager manager = EncodingManager.create(new DefaultFlagEncoderFactory(), flagEncodersStr);
+        String flagEncoderStrings = "car,bike,foot";
+        EncodingManager manager = EncodingManager.create(new DefaultFlagEncoderFactory(), flagEncoderStrings);
 
         assertFalse(((AbstractFlagEncoder) manager.getEncoder("car")).isBlockFords());
         assertFalse(((AbstractFlagEncoder) manager.getEncoder("bike")).isBlockFords());
         assertFalse(((AbstractFlagEncoder) manager.getEncoder("foot")).isBlockFords());
 
         // 2) two encoders crossing fords
-        flagEncodersStr = "car,bike|block_fords=true,foot|block_fords=false";
-        manager = EncodingManager.create(new DefaultFlagEncoderFactory(), flagEncodersStr);
+        flagEncoderStrings = "car, bike|block_fords=true, foot|block_fords=false";
+        manager = EncodingManager.create(new DefaultFlagEncoderFactory(), flagEncoderStrings);
 
         assertFalse(((AbstractFlagEncoder) manager.getEncoder("car")).isBlockFords());
         assertTrue(((AbstractFlagEncoder) manager.getEncoder("bike")).isBlockFords());
         assertFalse(((AbstractFlagEncoder) manager.getEncoder("foot")).isBlockFords());
 
         // 2) Try combined with another tag
-        flagEncodersStr = "car|turn_costs=true|block_fords=true,bike,foot|block_fords=false";
-        manager = EncodingManager.create(new DefaultFlagEncoderFactory(), flagEncodersStr);
+        flagEncoderStrings = "car|turn_costs=true|block_fords=true, bike, foot|block_fords=false";
+        manager = EncodingManager.create(new DefaultFlagEncoderFactory(), flagEncoderStrings);
 
         assertTrue(((AbstractFlagEncoder) manager.getEncoder("car")).isBlockFords());
         assertFalse(((AbstractFlagEncoder) manager.getEncoder("bike")).isBlockFords());
@@ -262,8 +257,8 @@ public class EncodingManagerTest {
             IntsRef edgeFlags = manager.handleWayTags(way, aw, manager.createRelationFlags());
             assertTrue(accessEnc.getBool(false, edgeFlags));
             if (!encoder.toString().equals("foot"))
-                assertFalse(encoder.toString(), accessEnc.getBool(true, edgeFlags));
-            assertTrue(encoder.toString(), roundaboutEnc.getBool(false, edgeFlags));
+                assertFalse(accessEnc.getBool(true, edgeFlags), encoder.toString());
+            assertTrue(roundaboutEnc.getBool(false, edgeFlags), encoder.toString());
 
             way.clearTags();
             way.setTag("highway", "tertiary");
@@ -273,24 +268,24 @@ public class EncodingManagerTest {
             edgeFlags = manager.handleWayTags(way, aw, manager.createRelationFlags());
             assertTrue(accessEnc.getBool(false, edgeFlags));
             if (!encoder.toString().equals("foot"))
-                assertFalse(encoder.toString(), accessEnc.getBool(true, edgeFlags));
-            assertTrue(encoder.toString(), roundaboutEnc.getBool(false, edgeFlags));
+                assertFalse(accessEnc.getBool(true, edgeFlags), encoder.toString());
+            assertTrue(roundaboutEnc.getBool(false, edgeFlags), encoder.toString());
         }
     }
 
     @Test
     public void validEV() {
         for (String str : Arrays.asList("blup_test", "test", "test12", "tes$0", "car_test_test", "small_car$average_speed")) {
-            assertTrue(str, EncodingManager.isValidEncodedValue(str));
+            assertTrue(EncodingManager.isValidEncodedValue(str), str);
         }
 
         for (String str : Arrays.asList("Test", "12test", "test|3", "car__test", "blup_te.st_", "car___test", "car$$access",
                 "test{34", "truck__average_speed", "blup.test", "test,21", "täst", "blup.two.three", "blup..test")) {
-            assertFalse(str, EncodingManager.isValidEncodedValue(str));
+            assertFalse(EncodingManager.isValidEncodedValue(str), str);
         }
 
         for (String str : Arrays.asList("break", "switch")) {
-            assertFalse(str, EncodingManager.isValidEncodedValue(str));
+            assertFalse(EncodingManager.isValidEncodedValue(str), str);
         }
     }
 }

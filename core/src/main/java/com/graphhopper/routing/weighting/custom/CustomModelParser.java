@@ -34,7 +34,8 @@ import org.codehaus.commons.compiler.io.Readers;
 import org.codehaus.janino.Scanner;
 import org.codehaus.janino.*;
 import org.codehaus.janino.util.DeepCopier;
-import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
+import org.locationtech.jts.geom.Polygonal;
+import org.locationtech.jts.geom.prep.PreparedPolygon;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
@@ -43,9 +44,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class CustomModelParser {
     private static final AtomicLong longVal = new AtomicLong(1);
-    static final String IN_AREA_PREFIX = "in_area_";
+    static final String IN_AREA_PREFIX = "in_";
     private static final Set<String> allowedNames = new HashSet<>(Arrays.asList("edge", "Math"));
     private static final boolean JANINO_DEBUG = Boolean.getBoolean(Scanner.SYSTEM_PROPERTY_SOURCE_DEBUGGING_ENABLE);
+    private static final String SCRIPT_FILE_DIR = System.getProperty(Scanner.SYSTEM_PROPERTY_SOURCE_DEBUGGING_DIR, "./src/main/java/com/graphhopper/routing/weighting/custom");
 
     // Without a cache the class creation takes 10-40ms which makes routingLM8 requests 20% slower on average.
     // CH requests and preparation is unaffected as cached weighting from preparation is used.
@@ -68,28 +70,38 @@ public class CustomModelParser {
         // utility class
     }
 
-    public static CustomWeighting createWeighting(FlagEncoder baseFlagEncoder, EncodedValueLookup lookup, TurnCostProvider turnCostProvider,
-                                                  CustomModel customModel) {
+    public static CustomWeighting createWeighting(FlagEncoder baseFlagEncoder, EncodedValueLookup lookup,
+                                                  TurnCostProvider turnCostProvider, CustomModel customModel) {
         if (customModel == null)
             throw new IllegalStateException("CustomModel cannot be null");
-        CustomWeighting.Parameters parameters = createWeightingParameters(customModel, lookup, baseFlagEncoder.getMaxSpeed(), baseFlagEncoder.getAverageSpeedEnc());
+        DecimalEncodedValue avgSpeedEnc = lookup.getDecimalEncodedValue(EncodingManager.getKey(baseFlagEncoder.toString(), "average_speed"));
+        final String pKey = EncodingManager.getKey(baseFlagEncoder.toString(), "priority");
+        DecimalEncodedValue priorityEnc = lookup.hasEncodedValue(pKey) ? lookup.getDecimalEncodedValue(pKey) : null;
+
+        CustomWeighting.Parameters parameters = createWeightingParameters(customModel, lookup,
+                avgSpeedEnc, baseFlagEncoder.getMaxSpeed(), priorityEnc);
         return new CustomWeighting(baseFlagEncoder, turnCostProvider, parameters);
     }
 
     /**
      * This method compiles a new subclass of CustomWeightingHelper composed from the provided CustomModel caches this
      * and returns an instance.
+     * @param priorityEnc can be null
      */
-    static CustomWeighting.Parameters createWeightingParameters(CustomModel customModel, EncodedValueLookup lookup, double globalMaxSpeed,
-                                                                DecimalEncodedValue avgSpeedEnc) {
-        String key = customModel.toString() + ",global:" + globalMaxSpeed;
+    static CustomWeighting.Parameters createWeightingParameters(CustomModel customModel, EncodedValueLookup lookup,
+                                                                DecimalEncodedValue avgSpeedEnc, double globalMaxSpeed,
+                                                                DecimalEncodedValue priorityEnc) {
+
+        final double maxSpeed = customModel.findMaxSpeed(globalMaxSpeed); // globalMaxSpeed can be lower than avgSpeedEnc.getMaxDecimal()
+        final double maxPriority = customModel.findMaxPriority(priorityEnc == null ? 1 : priorityEnc.getMaxDecimal());
+        String key = customModel.toString() + ",maxSpeed:" + maxSpeed + ",maxPriority:" + maxPriority;
         if (key.length() > 100_000) throw new IllegalArgumentException("Custom Model too big: " + key.length());
 
         Class<?> clazz = customModel.isInternal() ? INTERNAL_CACHE.get(key) : null;
         if (CACHE_SIZE > 0 && clazz == null)
             clazz = CACHE.get(key);
         if (clazz == null) {
-            clazz = createClazz(customModel, lookup, globalMaxSpeed);
+            clazz = createClazz(customModel, lookup, maxSpeed);
             if (customModel.isInternal()) {
                 INTERNAL_CACHE.put(key, clazz);
                 if (INTERNAL_CACHE.size() > 100) {
@@ -106,8 +118,8 @@ public class CustomModelParser {
         try {
             // The class does not need to be thread-safe as we create an instance per request
             CustomWeightingHelper prio = (CustomWeightingHelper) clazz.getDeclaredConstructor().newInstance();
-            prio.init(lookup, avgSpeedEnc, customModel.getAreas());
-            return new CustomWeighting.Parameters(prio::getSpeed, prio::getPriority, findMaxSpeed(customModel, globalMaxSpeed),
+            prio.init(lookup, avgSpeedEnc, priorityEnc, customModel.getAreas());
+            return new CustomWeighting.Parameters(prio::getSpeed, prio::getPriority, maxSpeed, maxPriority,
                     customModel.getDistanceInfluence(), customModel.getHeadingPenalty());
         } catch (ReflectiveOperationException ex) {
             throw new IllegalArgumentException("Cannot compile expression " + ex.getMessage(), ex);
@@ -134,7 +146,7 @@ public class CustomModelParser {
             String errString = "Cannot compile expression";
             if (ex instanceof CompileException)
                 errString += ", in " + ((CompileException) ex).getLocation().getFileName();
-            throw new IllegalArgumentException(errString + " " + ex.getMessage(), ex);
+            throw new IllegalArgumentException(errString + ": " + ex.getMessage(), ex);
         }
     }
 
@@ -167,9 +179,9 @@ public class CustomModelParser {
     private static List<Java.BlockStatement> createGetPriorityStatements(Set<String> priorityVariables,
                                                                          CustomModel customModel, EncodedValueLookup lookup) throws Exception {
         List<Java.BlockStatement> priorityStatements = new ArrayList<>();
-        priorityStatements.addAll(verifyExpressions(new StringBuilder("double value = 1;\n"), "in 'priority' entry, ",
+        priorityStatements.addAll(verifyExpressions(new StringBuilder(), "in 'priority' entry, ",
                 priorityVariables, customModel.getPriority(), lookup, "return value;"));
-        String priorityMethodStartBlock = "";
+        String priorityMethodStartBlock = "double value = super.getRawPriority(edge, reverse);\n";
         for (String arg : priorityVariables) {
             priorityMethodStartBlock += getVariableDeclaration(lookup, arg);
         }
@@ -234,6 +246,7 @@ public class CustomModelParser {
         boolean includedAreaImports = false;
 
         final StringBuilder initSourceCode = new StringBuilder("this.avg_speed_enc = avgSpeedEnc;\n");
+        initSourceCode.append("this.priority_enc = priorityEnc;\n");
         Set<String> set = new HashSet<>(priorityVariables);
         set.addAll(speedVariables);
         for (String arg : set) {
@@ -247,7 +260,8 @@ public class CustomModelParser {
                 if (!includedAreaImports) {
                     importSourceCode.append("import " + BBox.class.getName() + ";\n");
                     importSourceCode.append("import " + GHUtility.class.getName() + ";\n");
-                    importSourceCode.append("import " + PreparedGeometryFactory.class.getName() + ";\n");
+                    importSourceCode.append("import " + PreparedPolygon.class.getName() + ";\n");
+                    importSourceCode.append("import " + Polygonal.class.getName() + ";\n");
                     importSourceCode.append("import " + JsonFeature.class.getName() + ";\n");
                     importSourceCode.append("import " + Polygon.class.getName() + ";\n");
                     includedAreaImports = true;
@@ -256,11 +270,18 @@ public class CustomModelParser {
                 String id = arg.substring(IN_AREA_PREFIX.length());
                 if (!EncodingManager.isValidEncodedValue(id))
                     throw new IllegalArgumentException("Area has invalid name: " + arg);
-                if (!customModel.getAreas().containsKey(id))
+                JsonFeature feature = customModel.getAreas().get(id);
+                if (feature == null)
                     throw new IllegalArgumentException("Area '" + id + "' wasn't found");
+                if (feature.getGeometry() == null)
+                    throw new IllegalArgumentException("Area '" + id + "' does not contain a geometry");
+                if (!(feature.getGeometry() instanceof Polygonal))
+                    throw new IllegalArgumentException("Currently only type=Polygon is supported for areas but was " + feature.getGeometry().getGeometryType());
+                if (feature.getProperties() != null && !feature.getProperties().isEmpty() || feature.getBBox() != null)
+                    throw new IllegalArgumentException("Bounding box and properties of area " + id + " must be empty");
                 classSourceCode.append("protected " + Polygon.class.getSimpleName() + " " + arg + ";\n");
-                initSourceCode.append("JsonFeature feature = (JsonFeature) areas.get(\"" + id + "\");\n");
-                initSourceCode.append("this." + arg + " = new Polygon(new PreparedGeometryFactory().create(feature.getGeometry()));\n");
+                initSourceCode.append("JsonFeature feature_" + id + " = (JsonFeature) areas.get(\"" + id + "\");\n");
+                initSourceCode.append("this." + arg + " = new Polygon(new PreparedPolygon((Polygonal) feature_" + id + ".getGeometry()));\n");
             } else {
                 if (!isValidVariableName(arg))
                     throw new IllegalArgumentException("Variable not supported: " + arg);
@@ -276,8 +297,8 @@ public class CustomModelParser {
                 + "\npublic class JaninoCustomWeightingHelperSubclass" + counter + " extends " + CustomWeightingHelper.class.getSimpleName() + " {\n"
                 + classSourceCode
                 + "   @Override\n"
-                + "   public void init(EncodedValueLookup lookup, "
-                + DecimalEncodedValue.class.getName() + " avgSpeedEnc, Map<String, " + JsonFeature.class.getName() + "> areas) {\n"
+                + "   public void init(EncodedValueLookup lookup, " + DecimalEncodedValue.class.getName() + " avgSpeedEnc, "
+                + DecimalEncodedValue.class.getName() + " priorityEnc, Map<String, " + JsonFeature.class.getName() + "> areas) {\n"
                 + initSourceCode
                 + "   }\n\n"
                 // we need these placeholder methods so that the hooks in DeepCopier are invoked
@@ -376,7 +397,7 @@ public class CustomModelParser {
                 StringWriter sw = new StringWriter();
                 Unparser.unparse(cu, sw);
                 // System.out.println(sw.toString());
-                File dir = new File("./src/main/java/com/graphhopper/routing/weighting/custom");
+                File dir = new File(SCRIPT_FILE_DIR);
                 File temporaryFile = new File(dir, "JaninoCustomWeightingHelperSubclass" + counter + ".java");
                 Reader reader = Readers.teeReader(
                         new StringReader(sw.toString()), // in
@@ -393,42 +414,5 @@ public class CustomModelParser {
             compiler.cook(cu);
             return compiler;
         }
-    }
-
-    static double findMaxSpeed(CustomModel customModel, final double maxSpeed) {
-        double globalMin_maxSpeed = maxSpeed;
-        double blockMax_maxSpeed = 0;
-        for (Statement statement : customModel.getSpeed()) {
-            // Lowering the max_speed estimate for 'limit to' only (TODO later also for MULTIPLY)
-            if (statement.getOperation() == Statement.Op.LIMIT) {
-                if (statement.getValue() > maxSpeed)
-                    throw new IllegalArgumentException("Can never apply 'limit to': " + statement.getValue()
-                            + " because maximum vehicle speed is " + maxSpeed);
-
-                switch (statement.getKeyword()) {
-                    case IF:
-                        if ("true".equals(statement.getExpression())) {
-                            blockMax_maxSpeed = globalMin_maxSpeed = Math.min(statement.getValue(), maxSpeed);
-                        } else {
-                            blockMax_maxSpeed = statement.getValue();
-                        }
-                        break;
-                    case ELSEIF:
-                        blockMax_maxSpeed = Math.max(blockMax_maxSpeed, statement.getValue());
-                        break;
-                    case ELSE:
-                        blockMax_maxSpeed = Math.max(blockMax_maxSpeed, statement.getValue());
-                        globalMin_maxSpeed = Math.min(globalMin_maxSpeed, blockMax_maxSpeed);
-                        break;
-                    default:
-                        throw new IllegalArgumentException("unknown keyword " + statement.getKeyword());
-                }
-
-                if (globalMin_maxSpeed <= 0)
-                    throw new IllegalArgumentException("speed is always limited to 0. This must not be but results from " + statement);
-            }
-        }
-
-        return globalMin_maxSpeed;
     }
 }

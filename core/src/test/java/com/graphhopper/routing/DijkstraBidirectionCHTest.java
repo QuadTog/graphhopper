@@ -30,11 +30,11 @@ import com.graphhopper.storage.*;
 import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.PMap;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static com.graphhopper.util.Parameters.Algorithms.DIJKSTRA_BI;
 import static com.graphhopper.util.Parameters.Routing.ALGORITHM;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Run some tests specific for {@link DijkstraBidirectionCH}, e.g. fine grained path unpacking and stall on demand
@@ -67,10 +67,10 @@ public class DijkstraBidirectionCHTest {
         prepareCH(ghStorage, CHConfig.nodeBased(weighting.getName(), weighting));
 
         // use base graph for solving normal Dijkstra
-        Path p1 = new RoutingAlgorithmFactorySimple().createAlgo(ghStorage, AlgorithmOptions.start().weighting(weighting).build()).calcPath(0, 3);
+        Path p1 = new RoutingAlgorithmFactorySimple().createAlgo(ghStorage, weighting, new AlgorithmOptions()).calcPath(0, 3);
         assertEquals(IntArrayList.from(0, 1, 5, 2, 3), p1.calcNodes());
-        assertEquals(p1.toString(), 402.29, p1.getDistance(), 1e-2);
-        assertEquals(p1.toString(), 144823, p1.getTime());
+        assertEquals(402.30, p1.getDistance(), 1e-2, p1.toString());
+        assertEquals(144829, p1.getTime(), p1.toString());
     }
 
     @Test
@@ -78,13 +78,11 @@ public class DijkstraBidirectionCHTest {
         EncodingManager em = EncodingManager.create("foot,car");
         FlagEncoder footEncoder = em.getEncoder("foot");
         FlagEncoder carEncoder = em.getEncoder("car");
-        AlgorithmOptions footOptions = AlgorithmOptions.start().
-                weighting(new FastestWeighting(footEncoder)).build();
-        AlgorithmOptions carOptions = AlgorithmOptions.start().
-                weighting(new FastestWeighting(carEncoder)).build();
+        FastestWeighting footWeighting = new FastestWeighting(footEncoder);
+        FastestWeighting carWeighting = new FastestWeighting(carEncoder);
 
-        CHConfig footConfig = CHConfig.nodeBased("p_foot", footOptions.getWeighting());
-        CHConfig carConfig = CHConfig.nodeBased("p_car", carOptions.getWeighting());
+        CHConfig footConfig = CHConfig.nodeBased("p_foot", footWeighting);
+        CHConfig carConfig = CHConfig.nodeBased("p_car", carWeighting);
         GraphHopperStorage g = new GraphBuilder(em).setCHConfigs(footConfig, carConfig).create();
         RoutingAlgorithmTest.initFootVsCar(carEncoder, footEncoder, g);
 
@@ -95,18 +93,18 @@ public class DijkstraBidirectionCHTest {
         RoutingCHGraph chGraph = g.getRoutingCHGraph(carConfig.getName());
         Path p1 = createCHAlgo(chGraph, true).calcPath(0, 7);
         assertEquals(IntArrayList.from(0, 4, 6, 7), p1.calcNodes());
-        assertEquals(p1.toString(), 15000, p1.getDistance(), 1e-6);
+        assertEquals(15000, p1.getDistance(), 1e-6, p1.toString());
 
         // use base graph for solving normal Dijkstra via car
-        Path p2 = new RoutingAlgorithmFactorySimple().createAlgo(g, carOptions).calcPath(0, 7);
+        Path p2 = new RoutingAlgorithmFactorySimple().createAlgo(g, carWeighting, new AlgorithmOptions()).calcPath(0, 7);
         assertEquals(IntArrayList.from(0, 4, 6, 7), p2.calcNodes());
-        assertEquals(p2.toString(), 15000, p2.getDistance(), 1e-6);
-        assertEquals(p2.toString(), 2700 * 1000, p2.getTime());
+        assertEquals(15000, p2.getDistance(), 1e-6, p2.toString());
+        assertEquals(2700 * 1000, p2.getTime(), p2.toString());
 
         // use base graph for solving normal Dijkstra via foot
-        Path p4 = new RoutingAlgorithmFactorySimple().createAlgo(g, footOptions).calcPath(0, 7);
-        assertEquals(p4.toString(), 17000, p4.getDistance(), 1e-6);
-        assertEquals(p4.toString(), 12240 * 1000, p4.getTime());
+        Path p4 = new RoutingAlgorithmFactorySimple().createAlgo(g, footWeighting, new AlgorithmOptions()).calcPath(0, 7);
+        assertEquals(17000, p4.getDistance(), 1e-6, p4.toString());
+        assertEquals(12240 * 1000, p4.getTime(), p4.toString());
         assertEquals(IntArrayList.from(0, 4, 5, 7), p4.calcNodes());
     }
 
@@ -136,29 +134,27 @@ public class DijkstraBidirectionCHTest {
         }
         GHUtility.setSpeed(60, true, false, carEncoder, graph.edge(9, 0).setDistance(1));
         GHUtility.setSpeed(60, true, false, carEncoder, graph.edge(3, 9).setDistance(200));
-        CHGraph chGraph = graph.getCHGraph();
+        graph.freeze();
+        CHStorage store = graph.getCHStore();
 
         // explicitly set the node levels equal to the node ids
         // the graph contraction with this ordering yields no shortcuts
-        for (int i = 0; i < 10; ++i) {
-            chGraph.setLevel(i, i);
-        }
-        graph.freeze();
-        RoutingCHGraph routingCHGraph = graph.getRoutingCHGraph(chGraph.getCHConfig().getName());
+        new CHStorageBuilder(store).setIdentityLevels();
+        RoutingCHGraph routingCHGraph = graph.getRoutingCHGraph();
         RoutingAlgorithm algo = createCHAlgo(routingCHGraph, true);
         Path p = algo.calcPath(1, 0);
         // node 3 will be stalled and nodes 4-7 won't be explored --> we visit 7 nodes
         // note that node 9 will be visited by both forward and backward searches
         assertEquals(7, algo.getVisitedNodes());
         assertEquals(102, p.getDistance(), 1.e-3);
-        assertEquals(p.toString(), IntArrayList.from(1, 8, 9, 0), p.calcNodes());
+        assertEquals(IntArrayList.from(1, 8, 9, 0), p.calcNodes(), p.toString());
 
         // without stalling we visit 11 nodes
         RoutingAlgorithm algoNoSod = createCHAlgo(routingCHGraph, false);
         Path pNoSod = algoNoSod.calcPath(1, 0);
         assertEquals(11, algoNoSod.getVisitedNodes());
         assertEquals(102, pNoSod.getDistance(), 1.e-3);
-        assertEquals(pNoSod.toString(), IntArrayList.from(1, 8, 9, 0), pNoSod.calcNodes());
+        assertEquals(IntArrayList.from(1, 8, 9, 0), pNoSod.calcNodes(), pNoSod.toString());
     }
 
     // t(0)--slow->1--s(2)
@@ -189,17 +185,14 @@ public class DijkstraBidirectionCHTest {
         edge.set(avSpeedEnc, speed, revSpeed);
 
         GHUtility.setSpeed(encoder.getMaxSpeed() / 2, true, true, encoder, graph.edge(1, 2).setDistance(1));
-
-        CHGraph chGraph = graph.getCHGraph();
-        for (int i = 0; i < 3; ++i) {
-            chGraph.setLevel(i, i);
-        }
         graph.freeze();
-        RoutingCHGraph routingCHGraph = graph.getRoutingCHGraph(chGraph.getCHConfig().getName());
+        CHStorage chStore = graph.getCHStore();
+        new CHStorageBuilder(chStore).setIdentityLevels();
+        RoutingCHGraph routingCHGraph = graph.getRoutingCHGraph();
         RoutingAlgorithm algo = createCHAlgo(routingCHGraph, true);
         Path p = algo.calcPath(from, to);
         assertEquals(3, p.getDistance(), 1.e-3);
-        assertEquals(p.toString(), expectedPath, p.calcNodes());
+        assertEquals(expectedPath, p.calcNodes(), p.toString());
     }
 
     private GraphHopperStorage createGHStorage(Weighting weighting) {

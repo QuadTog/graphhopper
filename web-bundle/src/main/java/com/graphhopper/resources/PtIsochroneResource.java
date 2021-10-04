@@ -18,24 +18,31 @@
 
 package com.graphhopper.resources;
 
-import com.graphhopper.gtfs.*;
-import com.graphhopper.isochrone.algorithm.ContourBuilder;
-import com.graphhopper.isochrone.algorithm.ReadableTriangulation;
-import com.graphhopper.jackson.ResponsePathSerializer;
-import com.graphhopper.util.JsonFeature;
-import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.routing.util.DefaultEdgeFilter;
-import com.graphhopper.routing.util.EdgeFilter;
-import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.weighting.FastestWeighting;
-import com.graphhopper.storage.GraphHopperStorage;
-import com.graphhopper.storage.NodeAccess;
-import com.graphhopper.storage.index.LocationIndex;
-import com.graphhopper.storage.index.Snap;
-import com.graphhopper.util.EdgeIteratorState;
-import com.graphhopper.util.shapes.BBox;
-import com.graphhopper.util.shapes.GHPoint;
-import org.locationtech.jts.geom.*;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import javax.inject.Inject;
+import javax.ws.rs.DefaultValue;
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.MediaType;
+
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.CoordinateList;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.MultiPoint;
+import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.triangulate.ConformingDelaunayTriangulator;
 import org.locationtech.jts.triangulate.ConstraintVertex;
 import org.locationtech.jts.triangulate.DelaunayTriangulationBuilder;
@@ -43,22 +50,41 @@ import org.locationtech.jts.triangulate.quadedge.QuadEdge;
 import org.locationtech.jts.triangulate.quadedge.QuadEdgeSubdivision;
 import org.locationtech.jts.triangulate.quadedge.Vertex;
 
-import javax.inject.Inject;
-import javax.ws.rs.*;
-import javax.ws.rs.core.MediaType;
-import java.time.Instant;
-import java.util.*;
-import java.util.function.Function;
+import com.graphhopper.gtfs.GraphExplorer;
+import com.graphhopper.gtfs.GtfsStorage;
+import com.graphhopper.gtfs.Label;
+import com.graphhopper.gtfs.MultiCriteriaLabelSetting;
+import com.graphhopper.gtfs.PtEncodedValues;
+import com.graphhopper.gtfs.RealtimeFeed;
+import com.graphhopper.isochrone.algorithm.ContourBuilder;
+import com.graphhopper.isochrone.algorithm.ReadableTriangulation;
+import com.graphhopper.jackson.ResponsePathSerializer;
+import com.graphhopper.routing.ev.Subnetwork;
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.routing.util.DefaultSnapFilter;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.weighting.FastestWeighting;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.GraphHopperStorage;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.JsonFeature;
+import com.graphhopper.util.shapes.BBox;
+import com.graphhopper.util.shapes.GHPoint;
 
 @Path("isochrone-pt")
 public class PtIsochroneResource {
 
     private static final double JTS_TOLERANCE = 0.00001;
 
-    private GtfsStorage gtfsStorage;
-    private EncodingManager encodingManager;
-    private GraphHopperStorage graphHopperStorage;
-    private LocationIndex locationIndex;
+    private final GtfsStorage gtfsStorage;
+    private final EncodingManager encodingManager;
+    private final GraphHopperStorage graphHopperStorage;
+    private final LocationIndex locationIndex;
 
     private final Function<Label, Double> z = label -> (double) label.currentTime;
 
@@ -98,16 +124,18 @@ public class PtIsochroneResource {
         double targetZ = initialTime.toEpochMilli() + seconds * 1000;
 
         GeometryFactory geometryFactory = new GeometryFactory();
-        final EdgeFilter filter = DefaultEdgeFilter.allEdges(graphHopperStorage.getEncodingManager().getEncoder("foot"));
-        Snap snap = locationIndex.findClosest(source.lat, source.lon, filter);
+        final FlagEncoder footEncoder = encodingManager.getEncoder("foot");
+        final Weighting weighting = new FastestWeighting(footEncoder);
+        final EdgeFilter filter = new DefaultSnapFilter(weighting, encodingManager.getBooleanEncodedValue(Subnetwork.key("foot")));
+        final Snap snap = locationIndex.findClosest(source.lat, source.lon, filter);
         QueryGraph queryGraph = QueryGraph.create(graphHopperStorage, Collections.singletonList(snap));
         if (!snap.isValid()) {
             throw new IllegalArgumentException("Cannot find point: " + source);
         }
 
         PtEncodedValues ptEncodedValues = PtEncodedValues.fromEncodingManager(encodingManager);
-        GraphExplorer graphExplorer = new GraphExplorer(queryGraph, new FastestWeighting(encodingManager.getEncoder("foot")), ptEncodedValues, gtfsStorage, RealtimeFeed.empty(gtfsStorage), reverseFlow, false, false, 5.0, reverseFlow, blockedRouteTypes);
-        MultiCriteriaLabelSetting router = new MultiCriteriaLabelSetting(graphExplorer, ptEncodedValues, reverseFlow, false, false, 1000000, Collections.emptyList());
+        GraphExplorer graphExplorer = new GraphExplorer(queryGraph, weighting, ptEncodedValues, gtfsStorage, RealtimeFeed.empty(gtfsStorage), reverseFlow, false, false, 5.0, reverseFlow, blockedRouteTypes);
+        MultiCriteriaLabelSetting router = new MultiCriteriaLabelSetting(graphExplorer, ptEncodedValues, reverseFlow, false, false, 0, Collections.emptyList());
 
         Map<Coordinate, Double> z1 = new HashMap<>();
         NodeAccess nodeAccess = queryGraph.getNodeAccess();
@@ -118,22 +146,19 @@ public class PtIsochroneResource {
         };
 
         if (format.equals("multipoint")) {
-            router.calcLabels(snap.getClosestNode(), initialTime, sptVisitor, label -> label.currentTime <= targetZ);
+            calcLabels(router, snap.getClosestNode(), initialTime, sptVisitor, label -> label.currentTime <= targetZ);
             MultiPoint exploredPoints = geometryFactory.createMultiPointFromCoords(z1.keySet().toArray(new Coordinate[0]));
             return wrap(exploredPoints);
         } else {
-            router.calcLabels(snap.getClosestNode(), initialTime, sptVisitor, label -> label.currentTime <= targetZ);
+            calcLabels(router, snap.getClosestNode(), initialTime, sptVisitor, label -> label.currentTime <= targetZ);
             MultiPoint exploredPoints = geometryFactory.createMultiPointFromCoords(z1.keySet().toArray(new Coordinate[0]));
 
             // Get at least all nodes within our bounding box (I think convex hull would be enough.)
             // I think then we should have all possible encroaching points. (Proof needed.)
-            locationIndex.query(BBox.fromEnvelope(exploredPoints.getEnvelopeInternal()), new LocationIndex.Visitor() {
-                @Override
-                public void onEdge(int edgeId) {
-                    EdgeIteratorState edge = queryGraph.getEdgeIteratorStateForKey(edgeId * 2);
-                    z1.merge(new Coordinate(nodeAccess.getLon(edge.getBaseNode()), nodeAccess.getLat(edge.getBaseNode())), Double.MAX_VALUE, Math::min);
-                    z1.merge(new Coordinate(nodeAccess.getLon(edge.getAdjNode()), nodeAccess.getLat(edge.getAdjNode())), Double.MAX_VALUE, Math::min);
-                }
+            locationIndex.query(BBox.fromEnvelope(exploredPoints.getEnvelopeInternal()), edgeId -> {
+                EdgeIteratorState edge = queryGraph.getEdgeIteratorStateForKey(edgeId * 2);
+                z1.merge(new Coordinate(nodeAccess.getLon(edge.getBaseNode()), nodeAccess.getLat(edge.getBaseNode())), Double.MAX_VALUE, Math::min);
+                z1.merge(new Coordinate(nodeAccess.getLon(edge.getAdjNode()), nodeAccess.getLat(edge.getAdjNode())), Double.MAX_VALUE, Math::min);
             });
             exploredPoints = geometryFactory.createMultiPointFromCoords(z1.keySet().toArray(new Coordinate[0]));
 
@@ -198,6 +223,17 @@ public class PtIsochroneResource {
             }
         }
 
+    }
+
+    private static void calcLabels(MultiCriteriaLabelSetting router, int from, Instant startTime, MultiCriteriaLabelSetting.SPTVisitor visitor, Predicate<Label> predicate) {
+        Iterator<Label> iterator = router.calcLabels(from, startTime).iterator();
+        while(iterator.hasNext()) {
+            Label label = iterator.next();
+            if (!predicate.test(label)) {
+                break;
+            }
+            visitor.visit(label);
+        }
     }
 
     private Response wrap(Geometry isoline) {

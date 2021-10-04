@@ -36,8 +36,8 @@ class RAMIntDataAccess extends AbstractDataAccess {
     private boolean store;
     private int segmentSizeIntsPower;
 
-    RAMIntDataAccess(String name, String location, boolean store, ByteOrder order) {
-        super(name, location, order);
+    RAMIntDataAccess(String name, String location, boolean store, ByteOrder order, int segmentSize) {
+        super(name, location, order, segmentSize);
         this.store = store;
     }
 
@@ -55,30 +55,10 @@ class RAMIntDataAccess extends AbstractDataAccess {
     }
 
     @Override
-    public DataAccess copyTo(DataAccess da) {
-        if (da instanceof RAMIntDataAccess) {
-            copyHeader(da);
-            RAMIntDataAccess rda = (RAMIntDataAccess) da;
-            // TODO PERFORMANCE we could reuse rda segments!
-            rda.segments = new int[segments.length][];
-            for (int i = 0; i < segments.length; i++) {
-                int[] area = segments[i];
-                rda.segments[i] = Arrays.copyOf(area, area.length);
-            }
-            rda.setSegmentSize(segmentSizeInBytes);
-            // leave id, store and close unchanged
-            return da;
-        } else {
-            return super.copyTo(da);
-        }
-    }
-
-    @Override
     public RAMIntDataAccess create(long bytes) {
         if (segments.length > 0)
             throw new IllegalThreadStateException("already created");
 
-        setSegmentSize(segmentSizeInBytes);
         ensureCapacity(Math.max(10 * 4, bytes));
         return this;
     }
@@ -192,7 +172,7 @@ class RAMIntDataAccess extends AbstractDataAccess {
 
     @Override
     public final void setInt(long bytePos, int value) {
-        assert segmentSizeIntsPower > 0 : "call create or loadExisting before usage!";
+        assert segments.length > 0 : "call create or loadExisting before usage!";
         bytePos >>>= 2;
         int bufferIndex = (int) (bytePos >>> segmentSizeIntsPower);
         int index = (int) (bytePos & indexDivisor);
@@ -201,7 +181,7 @@ class RAMIntDataAccess extends AbstractDataAccess {
 
     @Override
     public final int getInt(long bytePos) {
-        assert segmentSizeIntsPower > 0 : "call create or loadExisting before usage!";
+        assert segments.length > 0 : "call create or loadExisting before usage!";
         bytePos >>>= 2;
         int bufferIndex = (int) (bytePos >>> segmentSizeIntsPower);
         int index = (int) (bytePos & indexDivisor);
@@ -210,7 +190,7 @@ class RAMIntDataAccess extends AbstractDataAccess {
 
     @Override
     public final void setShort(long bytePos, short value) {
-        assert segmentSizeIntsPower > 0 : "call create or loadExisting before usage!";
+        assert segments.length > 0 : "call create or loadExisting before usage!";
         if (bytePos % 4 != 0 && bytePos % 4 != 2)
             throw new IllegalMonitorStateException("bytePos of wrong multiple for RAMInt " + bytePos);
 
@@ -226,7 +206,7 @@ class RAMIntDataAccess extends AbstractDataAccess {
 
     @Override
     public final short getShort(long bytePos) {
-        assert segmentSizeIntsPower > 0 : "call create or loadExisting before usage!";
+        assert segments.length > 0 : "call create or loadExisting before usage!";
         if (bytePos % 4 != 0 && bytePos % 4 != 2)
             throw new IllegalMonitorStateException("bytePos of wrong multiple for RAMInt " + bytePos);
 
@@ -277,7 +257,7 @@ class RAMIntDataAccess extends AbstractDataAccess {
     }
 
     @Override
-    public DataAccess setSegmentSize(int bytes) {
+    DataAccess setSegmentSize(int bytes) {
         super.setSegmentSize(bytes);
         segmentSizeIntsPower = (int) (Math.log(segmentSizeInBytes / 4) / Math.log(2));
         indexDivisor = segmentSizeInBytes / 4 - 1;
@@ -287,19 +267,6 @@ class RAMIntDataAccess extends AbstractDataAccess {
     boolean releaseSegment(int segNumber) {
         segments[segNumber] = null;
         return true;
-    }
-
-    @Override
-    public void rename(String newName) {
-        if (!checkBeforeRename(newName)) {
-            return;
-        }
-        if (store) {
-            super.rename(newName);
-        }
-
-        // in every case set the name
-        name = newName;
     }
 
     @Override

@@ -22,18 +22,17 @@ import com.graphhopper.routing.ev.DecimalEncodedValue;
 import com.graphhopper.routing.util.*;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.BBox;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import java.io.Closeable;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.graphhopper.routing.util.EncodingManager.getKey;
 import static com.graphhopper.util.GHUtility.count;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Abstract test class to be extended for implementations of the Graph interface. Graphs
@@ -52,15 +51,15 @@ public abstract class AbstractGraphStorageTester {
     protected DecimalEncodedValue carAvSpeedEnc = carEncoder.getAverageSpeedEnc();
     protected FootFlagEncoder footEncoder = (FootFlagEncoder) encodingManager.getEncoder("foot");
     protected GraphHopperStorage graph;
-    EdgeFilter carOutFilter = DefaultEdgeFilter.outEdges(carEncoder);
-    EdgeFilter carInFilter = DefaultEdgeFilter.inEdges(carEncoder);
+    EdgeFilter carOutFilter = AccessFilter.outEdges(carEncoder.getAccessEnc());
+    EdgeFilter carInFilter = AccessFilter.inEdges(carEncoder.getAccessEnc());
     EdgeExplorer carOutExplorer;
     EdgeExplorer carInExplorer;
     EdgeExplorer carAllExplorer;
 
     public static void assertPList(PointList expected, PointList list) {
-        assertEquals("size of point lists is not equal", expected.getSize(), list.getSize());
-        for (int i = 0; i < expected.getSize(); i++) {
+        assertEquals(expected.size(), list.size(), "size of point lists is not equal");
+        for (int i = 0; i < expected.size(); i++) {
             assertEquals(expected.getLat(i), list.getLat(i), 1e-4);
             assertEquals(expected.getLon(i), list.getLon(i), 1e-4);
         }
@@ -102,12 +101,12 @@ public abstract class AbstractGraphStorageTester {
 
     abstract GraphHopperStorage createGHStorage(String location, boolean is3D);
 
-    @Before
+    @BeforeEach
     public void setUp() {
         Helper.removeDir(new File(locationParent));
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         Helper.close(graph);
         Helper.removeDir(new File(locationParent));
@@ -117,7 +116,7 @@ public abstract class AbstractGraphStorageTester {
     public void testSetTooBigDistance_435() {
         graph = createGHStorage();
 
-        double maxDist = BaseGraph.MAX_DIST;
+        double maxDist = BaseGraphNodesAndEdges.MAX_DIST;
         EdgeIteratorState edge1 = GHUtility.setSpeed(60, true, true, carEncoder, graph.edge(0, 1).setDistance(maxDist));
         assertEquals(maxDist, edge1.getDistance(), 1);
 
@@ -259,26 +258,6 @@ public abstract class AbstractGraphStorageTester {
     }
 
     @Test
-    public void testClone() {
-        graph = createGHStorage();
-        GHUtility.setSpeed(60, true, true, carEncoder, graph.edge(1, 2).setDistance(10));
-        NodeAccess na = graph.getNodeAccess();
-        na.setNode(0, 12, 23);
-        na.setNode(1, 8, 13);
-        na.setNode(2, 2, 10);
-        na.setNode(3, 5, 9);
-        GHUtility.setSpeed(60, true, true, carEncoder, graph.edge(1, 3).setDistance(10));
-
-        Graph cloneGraph = graph.copyTo(AbstractGraphStorageTester.this.createGHStorage(locationParent + "/clone", false));
-        assertEquals(graph.getNodes(), cloneGraph.getNodes());
-        assertEquals(getCountOut(1), count(cloneGraph.createEdgeExplorer(carOutFilter).setBaseNode(1)));
-        GHUtility.setSpeed(60, true, true, carEncoder, cloneGraph.edge(1, 4).setDistance(10));
-        assertEquals(3, count(cloneGraph.createEdgeExplorer(carOutFilter).setBaseNode(1)));
-        assertEquals(graph.getBounds(), cloneGraph.getBounds());
-        Helper.close((Closeable) cloneGraph);
-    }
-
-    @Test
     public void testCopyProperties() {
         graph = createGHStorage();
         EdgeIteratorState edge = GHUtility.setSpeed(60, true, false, carEncoder, graph.edge(1, 3).setDistance(10)).setName("testing").setWayGeometry(Helper.createPointList(1, 2));
@@ -308,21 +287,6 @@ public abstract class AbstractGraphStorageTester {
 
         graph = createGHStorage();
         assertEquals(0, graph.getNodes());
-    }
-
-    @Test
-    public void testCopyTo() {
-        graph = createGHStorage();
-        initExampleGraph(graph);
-        GraphHopperStorage gs = GraphBuilder.start(encodingManager).setSegmentSize(8000).setBytes(10).create();
-        graph.copyTo(gs);
-        checkExampleGraph(gs);
-
-        Helper.close(graph);
-        graph = createGHStorage();
-        gs.copyTo(graph);
-        checkExampleGraph(graph);
-        Helper.close(graph);
     }
 
     @Test
@@ -437,19 +401,12 @@ public abstract class AbstractGraphStorageTester {
     @Test
     public void testCheckFirstNode() {
         graph = createGHStorage();
-
+        // no nodes added yet
+        assertThrows(IllegalArgumentException.class, () -> getCountAll(1));
+        graph.getNodeAccess().setNode(1, 0, 0);
         assertEquals(0, getCountAll(1));
         GHUtility.setSpeed(60, true, true, carEncoder, graph.edge(0, 1).setDistance(12));
         assertEquals(1, getCountAll(1));
-    }
-
-    public boolean containsLatitude(Graph g, EdgeIterator iter, double latitude) {
-        NodeAccess na = g.getNodeAccess();
-        while (iter.next()) {
-            if (Math.abs(na.getLat(iter.getAdjNode()) - latitude) < 1e-4)
-                return true;
-        }
-        return false;
     }
 
     @Test
@@ -653,7 +610,7 @@ public abstract class AbstractGraphStorageTester {
         EdgeIteratorState edge = graph.edge(0, 3).setDistance(10);
         GHUtility.setSpeed(10, true, true, footEncoder, edge);
         GHUtility.setSpeed(10, true, true, carEncoder, edge);
-        EdgeExplorer footOutExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.outEdges(footEncoder));
+        EdgeExplorer footOutExplorer = graph.createEdgeExplorer(AccessFilter.outEdges(footEncoder.getAccessEnc()));
         assertEquals(GHUtility.asSet(3, 1), GHUtility.getNeighbors(footOutExplorer.setBaseNode(0)));
         assertEquals(GHUtility.asSet(3, 2), GHUtility.getNeighbors(carOutExplorer.setBaseNode(0)));
     }
@@ -694,8 +651,8 @@ public abstract class AbstractGraphStorageTester {
         EdgeIteratorState iter2 = GHUtility.setSpeed(60, true, true, carEncoder, graph.edge(0, 1).setDistance(10));
         iter2.setName("named street2");
 
-        assertEquals("named street1", graph.getEdgeIteratorState(iter1.getEdge(), iter1.getAdjNode()).getName());
-        assertEquals("named street2", graph.getEdgeIteratorState(iter2.getEdge(), iter2.getAdjNode()).getName());
+        assertEquals(graph.getEdgeIteratorState(iter1.getEdge(), iter1.getAdjNode()).getName(), "named street1");
+        assertEquals(graph.getEdgeIteratorState(iter2.getEdge(), iter2.getAdjNode()).getName(), "named street2");
     }
 
     @Test
@@ -720,6 +677,7 @@ public abstract class AbstractGraphStorageTester {
         assertEquals(Integer.MAX_VALUE / 3, edge.getFlags().ints[0]);
         graph.close();
 
+        dir = new RAMDirectory();
         graph = new GraphHopperStorage(dir, manager, false).create(defaultSize);
 
         DecimalEncodedValue avSpeed0Enc = manager.getDecimalEncodedValue(getKey("car0", "average_speed"));

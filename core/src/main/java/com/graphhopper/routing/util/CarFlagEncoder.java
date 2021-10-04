@@ -71,29 +71,29 @@ public class CarFlagEncoder extends AbstractFlagEncoder {
 
         blockPrivate(properties.getBool("block_private", true));
         blockFords(properties.getBool("block_fords", false));
-        blockBarriersByDefault(properties.getBool("block_barriers", true));
         setSpeedTwoDirections(properties.getBool("speed_two_directions", false));
 
         intendedValues.add("yes");
         intendedValues.add("designated");
         intendedValues.add("permissive");
 
-        potentialBarriers.add("gate");
-        potentialBarriers.add("lift_gate");
-        potentialBarriers.add("kissing_gate");
-        potentialBarriers.add("swing_gate");
-        potentialBarriers.add("cattle_grid");
-        potentialBarriers.add("chain");
+        passByDefaultBarriers.add("gate");
+        passByDefaultBarriers.add("lift_gate");
+        passByDefaultBarriers.add("swing_gate");
+        passByDefaultBarriers.add("cattle_grid");
+        passByDefaultBarriers.add("chain");
+        passByDefaultBarriers.add("yes"); // see #2400
 
-        absoluteBarriers.add("fence");
-        absoluteBarriers.add("bollard");
-        absoluteBarriers.add("stile");
-        absoluteBarriers.add("turnstile");
-        absoluteBarriers.add("cycle_barrier");
-        absoluteBarriers.add("motorcycle_barrier");
-        absoluteBarriers.add("block");
-        absoluteBarriers.add("bus_trap");
-        absoluteBarriers.add("sump_buster");
+        blockByDefaultBarriers.add("kissing_gate");
+        blockByDefaultBarriers.add("fence");
+        blockByDefaultBarriers.add("bollard");
+        blockByDefaultBarriers.add("stile");
+        blockByDefaultBarriers.add("turnstile");
+        blockByDefaultBarriers.add("cycle_barrier");
+        blockByDefaultBarriers.add("motorcycle_barrier");
+        blockByDefaultBarriers.add("block");
+        blockByDefaultBarriers.add("bus_trap");
+        blockByDefaultBarriers.add("sump_buster");
 
         badSurfaceSpeedMap.add("cobblestone");
         badSurfaceSpeedMap.add("grass_paver");
@@ -150,11 +150,6 @@ public class CarFlagEncoder extends AbstractFlagEncoder {
     @Override
     public TransportationMode getTransportationMode() {
         return TransportationMode.CAR;
-    }
-
-    @Override
-    public int getVersion() {
-        return 2;
     }
 
     /**
@@ -277,8 +272,8 @@ public class CarFlagEncoder extends AbstractFlagEncoder {
      */
     protected boolean isBackwardOneway(ReaderWay way) {
         return way.hasTag("oneway", "-1")
-                || way.hasTag("vehicle:forward", "no")
-                || way.hasTag("motor_vehicle:forward", "no");
+                || way.hasTag("vehicle:forward", restrictedValues)
+                || way.hasTag("motor_vehicle:forward", restrictedValues);
     }
 
     /**
@@ -286,16 +281,16 @@ public class CarFlagEncoder extends AbstractFlagEncoder {
      */
     protected boolean isForwardOneway(ReaderWay way) {
         return !way.hasTag("oneway", "-1")
-                && !way.hasTag("vehicle:forward", "no")
-                && !way.hasTag("motor_vehicle:forward", "no");
+                && !way.hasTag("vehicle:forward", restrictedValues)
+                && !way.hasTag("motor_vehicle:forward", restrictedValues);
     }
 
     protected boolean isOneway(ReaderWay way) {
         return way.hasTag("oneway", oneways)
-                || way.hasTag("vehicle:backward")
-                || way.hasTag("vehicle:forward")
-                || way.hasTag("motor_vehicle:backward")
-                || way.hasTag("motor_vehicle:forward");
+                || way.hasTag("vehicle:backward", restrictedValues)
+                || way.hasTag("vehicle:forward", restrictedValues)
+                || way.hasTag("motor_vehicle:backward", restrictedValues)
+                || way.hasTag("motor_vehicle:forward", restrictedValues);
     }
 
     /**

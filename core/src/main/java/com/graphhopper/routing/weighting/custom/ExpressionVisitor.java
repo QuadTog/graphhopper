@@ -83,9 +83,13 @@ class ExpressionVisitor implements Visitor.AtomVisitor<Boolean, Exception> {
             invalidMessage = "identifier " + n + " invalid";
             return false;
         }
-        if (rv instanceof Java.Literal)
+        if (rv instanceof Java.Literal) {
             return true;
-        if (rv instanceof Java.MethodInvocation) {
+        } else if (rv instanceof Java.UnaryOperation) {
+            Java.UnaryOperation uo = (Java.UnaryOperation) rv;
+            if (uo.operator.equals("!")) return uo.operand.accept(this);
+            return false;
+        } else if (rv instanceof Java.MethodInvocation) {
             Java.MethodInvocation mi = (Java.MethodInvocation) rv;
             if (allowedMethods.contains(mi.methodName)) {
                 // skip methods like this.in() for now
@@ -97,8 +101,9 @@ class ExpressionVisitor implements Visitor.AtomVisitor<Boolean, Exception> {
             }
             invalidMessage = mi.methodName + " is illegal method";
             return false;
-        }
-        if (rv instanceof Java.BinaryOperation) {
+        } else if (rv instanceof Java.ParenthesizedExpression) {
+            return ((Java.ParenthesizedExpression) rv).value.accept(this);
+        } else if (rv instanceof Java.BinaryOperation) {
             Java.BinaryOperation binOp = (Java.BinaryOperation) rv;
             int startRH = binOp.rhs.getLocation().getColumnNumber() - 1;
             if (binOp.lhs instanceof Java.AmbiguousName && ((Java.AmbiguousName) binOp.lhs).identifiers.length == 1) {
@@ -151,21 +156,21 @@ class ExpressionVisitor implements Visitor.AtomVisitor<Boolean, Exception> {
 
         for (Statement statement : list) {
             if (statement.getKeyword() == Statement.Keyword.ELSE) {
-                if (!Helper.isEmpty(statement.getExpression()))
-                    throw new IllegalArgumentException("expression must be empty but was " + statement.getExpression());
+                if (!Helper.isEmpty(statement.getCondition()))
+                    throw new IllegalArgumentException("expression must be empty but was " + statement.getCondition());
 
                 expressions.append("else {" + statement.getOperation().build(statement.getValue()) + "; }\n");
             } else if (statement.getKeyword() == Statement.Keyword.ELSEIF || statement.getKeyword() == Statement.Keyword.IF) {
-                ExpressionVisitor.ParseResult parseResult = parseExpression(statement.getExpression(), nameInConditionValidator, lookup);
+                ExpressionVisitor.ParseResult parseResult = parseExpression(statement.getCondition(), nameInConditionValidator, lookup);
                 if (!parseResult.ok)
-                    throw new IllegalArgumentException(exceptionInfo + " invalid expression \"" + statement.getExpression() + "\"" +
+                    throw new IllegalArgumentException(exceptionInfo + " invalid expression \"" + statement.getCondition() + "\"" +
                             (parseResult.invalidMessage == null ? "" : ": " + parseResult.invalidMessage));
                 createObjects.addAll(parseResult.guessedVariables);
                 if (statement.getKeyword() == Statement.Keyword.ELSEIF)
                     expressions.append("else ");
                 expressions.append("if (" + parseResult.converted + ") {" + statement.getOperation().build(statement.getValue()) + "; }\n");
             } else {
-                throw new IllegalArgumentException("The clause must be either 'if', 'else if' or 'else'");
+                throw new IllegalArgumentException("The clause must be either 'if', 'else_if' or 'else'");
             }
         }
         expressions.append(lastStmt);

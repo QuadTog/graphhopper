@@ -21,7 +21,6 @@ package com.graphhopper.routing.ch;
 import com.carrotsearch.hppc.*;
 import com.carrotsearch.hppc.sorting.IndirectComparator;
 import com.carrotsearch.hppc.sorting.IndirectSort;
-import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.DecimalEncodedValue;
 import com.graphhopper.routing.ev.TurnCost;
 import com.graphhopper.routing.util.AllEdgesIterator;
@@ -48,6 +47,12 @@ public class CHPreparationGraph {
     // objects for every node (one for outgoing edges and one for incoming edges).
     private PrepareEdge[] prepareEdgesOut;
     private PrepareEdge[] prepareEdgesIn;
+    // todo: it should be possible to store the 'skipped node' for each shortcut instead of storing the shortcut for
+    //       each prepare edge. but this is a bit tricky for edge-based, because of our bidir shortcuts for node-based,
+    //       and because basegraph has multi-edges. the advantage of storing the skipped node is that we could just write
+    //       it to one of the skipped edges fields temporarily, so we would not need this array and save memory during
+    //       the preparation.
+    private IntArrayList shortcutsByPrepareEdges;
     // todo: maybe we can get rid of this
     private int[] degrees;
     private IntSet neighborSet;
@@ -76,6 +81,7 @@ public class CHPreparationGraph {
         this.edgeBased = edgeBased;
         prepareEdgesOut = new PrepareEdge[nodes];
         prepareEdgesIn = new PrepareEdge[nodes];
+        shortcutsByPrepareEdges = new IntArrayList();
         degrees = new int[nodes];
         origGraphBuilder = edgeBased ? new OrigGraph.Builder() : null;
         neighborSet = new IntHashSet();
@@ -89,11 +95,10 @@ public class CHPreparationGraph {
         if (graph.getEdges() != prepareGraph.getOriginalEdges())
             throw new IllegalArgumentException("Cannot initialize from given graph. The number of edges does not match: " +
                     graph.getEdges() + " vs. " + prepareGraph.getOriginalEdges());
-        BooleanEncodedValue accessEnc = weighting.getFlagEncoder().getAccessEnc();
         AllEdgesIterator iter = graph.getAllEdges();
         while (iter.next()) {
-            double weightFwd = iter.get(accessEnc) ? weighting.calcEdgeWeight(iter, false) : Double.POSITIVE_INFINITY;
-            double weightBwd = iter.getReverse(accessEnc) ? weighting.calcEdgeWeight(iter, true) : Double.POSITIVE_INFINITY;
+            double weightFwd = weighting.calcEdgeWeightWithAccess(iter, false);
+            double weightBwd = weighting.calcEdgeWeightWithAccess(iter, true);
             prepareGraph.addEdge(iter.getBaseNode(), iter.getAdjNode(), iter.getEdge(), weightFwd, weightBwd);
         }
         prepareGraph.prepareForContraction();
@@ -209,6 +214,20 @@ public class CHPreparationGraph {
         ready = true;
     }
 
+    public void setShortcutForPrepareEdge(int prepareEdge, int shortcut) {
+        int index = prepareEdge - edges;
+        if (index >= shortcutsByPrepareEdges.size())
+            shortcutsByPrepareEdges.resize(index + 1);
+        shortcutsByPrepareEdges.set(index, shortcut);
+    }
+
+    public int getShortcutForPrepareEdge(int prepareEdge) {
+        if (prepareEdge < edges)
+            return prepareEdge;
+        int index = prepareEdge - edges;
+        return shortcutsByPrepareEdges.get(index);
+    }
+
     public PrepareGraphEdgeExplorer createOutEdgeExplorer() {
         checkReady();
         return new PrepareGraphEdgeExplorerImpl(prepareEdgesOut, false);
@@ -319,6 +338,7 @@ public class CHPreparationGraph {
         checkReady();
         prepareEdgesOut = null;
         prepareEdgesIn = null;
+        shortcutsByPrepareEdges = null;
         degrees = null;
         neighborSet = null;
         if (edgeBased)

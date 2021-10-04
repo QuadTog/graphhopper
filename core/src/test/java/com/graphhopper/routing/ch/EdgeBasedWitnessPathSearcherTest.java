@@ -22,34 +22,37 @@ import com.graphhopper.routing.util.CarFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.weighting.Weighting;
-import com.graphhopper.storage.CHGraph;
+import com.graphhopper.storage.CHStorage;
+import com.graphhopper.storage.CHStorageBuilder;
 import com.graphhopper.storage.GraphBuilder;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.PMap;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class EdgeBasedWitnessPathSearcherTest {
 
     private GraphHopperStorage graph;
-    private CHGraph chGraph;
+    private CHStorage chStore;
+    private CHStorageBuilder chBuilder;
     private Weighting weighting;
     private FlagEncoder encoder;
 
-    @Before
+    @BeforeEach
     public void setup() {
         encoder = new CarFlagEncoder(5, 5, 10);
         EncodingManager encodingManager = EncodingManager.create(encoder);
         graph = new GraphBuilder(encodingManager)
                 .setCHConfigStrings("p|car|shortest|edge")
                 .create();
-        chGraph = graph.getCHGraph();
-        weighting = chGraph.getCHConfig().getWeighting();
+        chStore = graph.getCHStore();
+        chBuilder = new CHStorageBuilder(chStore);
+        weighting = graph.getRoutingCHGraph().getWeighting();
     }
 
     @Test
@@ -134,10 +137,7 @@ public class EdgeBasedWitnessPathSearcherTest {
     }
 
     private void setMaxLevelOnAllNodes() {
-        int nodes = chGraph.getNodes();
-        for (int node = 0; node < nodes; node++) {
-            chGraph.setLevel(node, nodes);
-        }
+        chBuilder.setLevelForAllNodes(chStore.getNodes());
     }
 
     private void assertFinderResult(PrepareCHEntry expected, PrepareCHEntry result) {

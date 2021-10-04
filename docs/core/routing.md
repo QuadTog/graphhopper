@@ -5,7 +5,7 @@ your [Maven config](/README.md#maven) correctly.
 
 To do routing in your Java code you'll need just a few lines of code.
 
-See [this code example](../example/src/main/java/com/graphhopper/example/RoutingExample.java)
+See [this code example](../../example/src/main/java/com/graphhopper/example/RoutingExample.java)
 on how to do that where also code examples for the next sections are
 included.
 
@@ -20,9 +20,6 @@ See the [profiles](./profiles.md) for an explanation how to configure the differ
 can disable speed mode using `ch.disable=true`. In this case either hybrid mode (if there is an LM preparation for the
 chosen profile) or flexible mode will be used. To use flexible mode in the presence of an LM preparation you need to 
 also set `lm.disable=true`.
-
-If you need multiple vehicle profiles you can specify a list of vehicle profiles (see
-config.yml e.g. `graph.flag_encoders=car,bike` or use `EncodingManager.create("car,bike")`). 
 
 To calculate a route you have to pick one vehicle and optionally an algorithm like
 `bidirectional_astar`, see the test speedModeVersusHybridMode.

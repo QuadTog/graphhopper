@@ -19,7 +19,6 @@ package com.graphhopper.storage;
 
 import java.io.File;
 import java.nio.ByteOrder;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -35,7 +34,6 @@ public class GHDirectory implements Directory {
     private final DAType defaultType;
     private final ByteOrder byteOrder = ByteOrder.LITTLE_ENDIAN;
     protected Map<String, DataAccess> map = new HashMap<>();
-    protected Map<String, DAType> types = new HashMap<>();
 
     public GHDirectory(String _location, DAType defaultType) {
         this.defaultType = defaultType;
@@ -56,48 +54,44 @@ public class GHDirectory implements Directory {
         return byteOrder;
     }
 
-    public Directory put(String name, DAType type) {
-        if (!name.equals(toLowerCase(name)))
-            throw new IllegalArgumentException("Since 0.7 DataAccess objects does no longer accept upper case names");
-
-        types.put(name, type);
-        return this;
+    @Override
+    public DataAccess create(String name) {
+        return create(name, defaultType);
     }
 
     @Override
-    public DataAccess find(String name) {
-        DAType type = types.get(name);
-        if (type == null)
-            type = defaultType;
-
-        return find(name, type);
+    public DataAccess create(String name, int segmentSize) {
+        return create(name, defaultType, segmentSize);
     }
 
     @Override
-    public DataAccess find(String name, DAType type) {
+    public DataAccess create(String name, DAType type) {
+        return create(name, type, -1);
+    }
+
+    @Override
+    public DataAccess create(String name, DAType type, int segmentSize) {
         if (!name.equals(toLowerCase(name)))
             throw new IllegalArgumentException("Since 0.7 DataAccess objects does no longer accept upper case names");
 
-        DataAccess da = map.get(name);
-        if (da != null) {
-            if (!type.equals(da.getType()))
-                throw new IllegalStateException("Found existing DataAccess object '" + name
-                        + "' but types did not match. Requested:" + type + ", was:" + da.getType());
-            return da;
-        }
+        if (map.containsKey(name))
+            // we do not allow creating two DataAccess with the same name, because on disk there can only be one DA
+            // per file name
+            throw new IllegalStateException("DataAccess " + name + " has already been created");
 
+        DataAccess da;
         if (type.isInMemory()) {
             if (type.isInteg()) {
                 if (type.isStoring())
-                    da = new RAMIntDataAccess(name, location, true, byteOrder);
+                    da = new RAMIntDataAccess(name, location, true, byteOrder, segmentSize);
                 else
-                    da = new RAMIntDataAccess(name, location, false, byteOrder);
+                    da = new RAMIntDataAccess(name, location, false, byteOrder, segmentSize);
             } else if (type.isStoring())
-                da = new RAMDataAccess(name, location, true, byteOrder);
+                da = new RAMDataAccess(name, location, true, byteOrder, segmentSize);
             else
-                da = new RAMDataAccess(name, location, false, byteOrder);
+                da = new RAMDataAccess(name, location, false, byteOrder, segmentSize);
         } else if (type.isMMap()) {
-            da = new MMapDataAccess(name, location, byteOrder, type.isAllowWrites());
+            da = new MMapDataAccess(name, location, byteOrder, type.isAllowWrites(), segmentSize);
         } else {
             throw new IllegalArgumentException("DAType not supported " + type);
         }
@@ -152,11 +146,6 @@ public class GHDirectory implements Directory {
         if (isStoring())
             new File(location).mkdirs();
         return this;
-    }
-
-    @Override
-    public Collection<DataAccess> getAll() {
-        return map.values();
     }
 
     @Override

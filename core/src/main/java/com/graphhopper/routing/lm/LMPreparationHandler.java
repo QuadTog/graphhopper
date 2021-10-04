@@ -17,25 +17,32 @@
  */
 package com.graphhopper.routing.lm;
 
+import com.bedatadriven.jackson.datatype.jts.JtsModule;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.routing.ch.CHPreparationHandler;
+import com.graphhopper.routing.util.AreaIndex;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.StorableProperties;
 import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.util.JsonFeatureCollection;
 import com.graphhopper.util.Parameters;
 import com.graphhopper.util.Parameters.Landmark;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.*;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
-import static com.graphhopper.util.Helper.createFormatter;
-import static com.graphhopper.util.Helper.getMemInfo;
+import static com.graphhopper.util.Helper.*;
 
 /**
  * This class deals with the A*, landmark and triangulation (ALT) preparations.
@@ -57,6 +64,7 @@ public class LMPreparationHandler {
     private int preparationThreads;
     private ExecutorService threadPool;
     private boolean logDetails = false;
+    private AreaIndex<SplitArea> areaIndex;
 
     public LMPreparationHandler() {
         setPreparationThreads(1);
@@ -78,6 +86,18 @@ public class LMPreparationHandler {
         for (String loc : ghConfig.getString(Landmark.PREPARE + "suggestions_location", "").split(",")) {
             if (!loc.trim().isEmpty())
                 lmSuggestionsLocations.add(loc.trim());
+        }
+
+        if (!isEnabled())
+            return;
+
+        String splitAreaLocation = ghConfig.getString(Landmark.PREPARE + "split_area_location", "");
+        JsonFeatureCollection landmarkSplittingFeatureCollection = loadLandmarkSplittingFeatureCollection(splitAreaLocation);
+        if (landmarkSplittingFeatureCollection != null && !landmarkSplittingFeatureCollection.getFeatures().isEmpty()) {
+            List<SplitArea> splitAreas = landmarkSplittingFeatureCollection.getFeatures().stream()
+                    .map(SplitArea::fromJsonFeature)
+                    .collect(Collectors.toList());
+            areaIndex = new AreaIndex<>(splitAreas);
         }
     }
 
@@ -186,6 +206,12 @@ public class LMPreparationHandler {
      * @see CHPreparationHandler#prepare(StorableProperties, boolean) for a very similar method
      */
     public boolean loadOrDoWork(final StorableProperties properties, final boolean closeEarly) {
+        for (PrepareLandmarks prep : preparations) {
+            // using the area index we separate certain areas from each other but we do not change the base graph for this
+            // so that other algorithms still can route between these areas
+            if (areaIndex != null)
+                prep.setAreaIndex(areaIndex);
+        }
         ExecutorCompletionService<String> completionService = new ExecutorCompletionService<>(threadPool);
         int counter = 0;
         final AtomicBoolean prepared = new AtomicBoolean(false);
@@ -258,6 +284,21 @@ public class LMPreparationHandler {
             if (minNodes > 1)
                 tmpPrepareLM.setMinimumNodes(minNodes);
             addPreparation(tmpPrepareLM);
+        }
+    }
+
+    private JsonFeatureCollection loadLandmarkSplittingFeatureCollection(String splitAreaLocation) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JtsModule());
+        try (Reader reader = splitAreaLocation.isEmpty() ?
+                new InputStreamReader(LandmarkStorage.class.getResource("map.geo.json").openStream(), UTF_CS) :
+                new InputStreamReader(new FileInputStream(splitAreaLocation), UTF_CS)) {
+            JsonFeatureCollection result = objectMapper.readValue(reader, JsonFeatureCollection.class);
+            LOGGER.info("Loaded landmark splitting collection from " + splitAreaLocation);
+            return result;
+        } catch (IOException e) {
+            LOGGER.error("Problem while reading border map GeoJSON. Skipping this.", e);
+            return null;
         }
     }
 }

@@ -28,14 +28,14 @@ import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Peter Karich
@@ -190,6 +190,14 @@ public class CarFlagEncoderTest {
         flags = encoder.handleWayTags(em.createEdgeFlags(), way, encoder.getAccess(way));
         assertTrue(accessEnc.getBool(false, flags));
         assertFalse(accessEnc.getBool(true, flags));
+        way.clearTags();
+
+        // This is no one way
+        way.setTag("highway", "tertiary");
+        way.setTag("vehicle:backward", "designated");
+        flags = encoder.handleWayTags(em.createEdgeFlags(), way, encoder.getAccess(way));
+        assertTrue(accessEnc.getBool(false, flags));
+        assertTrue(accessEnc.getBool(true, flags));
         way.clearTags();
     }
 
@@ -536,8 +544,8 @@ public class CarFlagEncoderTest {
         node = new ReaderNode(1, -1, -1);
         node.setTag("barrier", "lift_gate");
         node.setTag("bicycle", "yes");
-        // barrier!
-        assertTrue(encoder.handleNodeTags(node) > 0);
+        // no barrier!
+        assertTrue(encoder.handleNodeTags(node) == 0);
 
         node = new ReaderNode(1, -1, -1);
         node.setTag("barrier", "lift_gate");
@@ -558,12 +566,7 @@ public class CarFlagEncoderTest {
         // barrier!
         assertTrue(encoder.handleNodeTags(node) > 0);
 
-        // ignore other access tags for absolute barriers!
-        node.setTag("motorcar", "yes");
-        // still barrier!
-        assertTrue(encoder.handleNodeTags(node) > 0);
-
-        CarFlagEncoder tmpEncoder = new CarFlagEncoder(new PMap("block_barriers=false"));
+        CarFlagEncoder tmpEncoder = new CarFlagEncoder();
         EncodingManager.create(tmpEncoder);
 
         // Test if cattle_grid is not blocking
@@ -577,7 +580,7 @@ public class CarFlagEncoderTest {
         // by default allow access through the gate for bike & foot!
         ReaderNode node = new ReaderNode(1, -1, -1);
         node.setTag("barrier", "chain");
-        assertTrue(encoder.handleNodeTags(node) > 0);
+        assertTrue(encoder.handleNodeTags(node) == 0);
         node.setTag("motor_vehicle", "no");
         assertTrue(encoder.handleNodeTags(node) > 0);
         node.setTag("motor_vehicle", "yes");

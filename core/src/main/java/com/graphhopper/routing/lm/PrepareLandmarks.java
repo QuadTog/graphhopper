@@ -18,7 +18,7 @@
 package com.graphhopper.routing.lm;
 
 import com.graphhopper.routing.util.AbstractAlgoPreparation;
-import com.graphhopper.routing.util.spatialrules.SpatialRuleLookup;
+import com.graphhopper.routing.util.AreaIndex;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Directory;
 import com.graphhopper.storage.Graph;
@@ -59,10 +59,10 @@ public class PrepareLandmarks extends AbstractAlgoPreparation {
     }
 
     /**
-     * @see LandmarkStorage#setSpatialRuleLookup(SpatialRuleLookup)
+     * @see LandmarkStorage#setAreaIndex(AreaIndex)
      */
-    public PrepareLandmarks setSpatialRuleLookup(SpatialRuleLookup ruleLookup) {
-        lms.setSpatialRuleLookup(ruleLookup);
+    public PrepareLandmarks setAreaIndex(AreaIndex<SplitArea> areaIndex) {
+        lms.setAreaIndex(areaIndex);
         return this;
     }
 
@@ -120,7 +120,7 @@ public class PrepareLandmarks extends AbstractAlgoPreparation {
         lms.createLandmarks();
         lms.flush();
 
-        LOGGER.info("Calculated landmarks for " + (lms.getSubnetworksWithLandmarks() - 1) + " subnetworks, took:" + sw.stop().getSeconds() + " => "
+        LOGGER.info("Calculated landmarks for " + (lms.getSubnetworksWithLandmarks() - 1) + " subnetworks, took:" + (int) sw.stop().getSeconds() + "s => "
                 + lms.getLandmarksAsGeoJSON() + ", stored weights:" + lms.getLandmarkCount()
                 + ", nodes:" + graph.getNodes() + ", " + Helper.getMemInfo());
         totalPrepareTime = sw.getMillis();

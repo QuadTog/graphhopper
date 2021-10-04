@@ -18,7 +18,6 @@
 package com.graphhopper.storage.index;
 
 import com.graphhopper.routing.util.EdgeFilter;
-import com.graphhopper.storage.Storable;
 import com.graphhopper.util.shapes.BBox;
 
 /**
@@ -30,7 +29,7 @@ import com.graphhopper.util.shapes.BBox;
  *
  * @author Peter Karich
  */
-public interface LocationIndex extends Storable<LocationIndex> {
+public interface LocationIndex {
 
     /**
      * This method returns the closest Snap for the specified location (lat, lon) and only if
@@ -40,7 +39,7 @@ public interface LocationIndex extends Storable<LocationIndex> {
      *
      * @param edgeFilter if a graph supports multiple vehicles we have to make sure that the entry
      *                   node into the graph is accessible from a selected vehicle. E.g. if you have a FOOT-query do:
-     *                   <pre>DefaultEdgeFilter.allEdges(footFlagEncoder);</pre>
+     *                   <pre>AccessFilter.allEdges(footFlagEncoder);</pre>
      * @return An object containing the closest node and edge for the specified location. The node id
      * has at least one edge which is accepted by the specified edgeFilter. If nothing is found
      * the method Snap.isValid will return false.
@@ -54,21 +53,25 @@ public interface LocationIndex extends Storable<LocationIndex> {
      */
     void query(BBox queryBBox, Visitor function);
 
+    void close();
+
     /**
      * This interface allows to visit edges stored in the LocationIndex.
      */
-    abstract class Visitor {
-        public boolean isTileInfo() {
+    @FunctionalInterface
+    interface Visitor {
+
+        void onEdge(int edgeId);
+
+        default boolean isTileInfo() {
             return false;
         }
 
         /**
          * This method is called if isTileInfo returns true.
          */
-        public void onTile(BBox bbox, int depth) {
+        default void onTile(BBox bbox, int depth) {
         }
-
-        public abstract void onEdge(int edgeId);
     }
 
 }

@@ -33,7 +33,7 @@ import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.PMap;
 import com.graphhopper.util.Parameters;
 import com.graphhopper.util.shapes.GHPoint;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -41,7 +41,8 @@ import java.util.List;
 
 import static com.graphhopper.util.GHUtility.updateDistancesFor;
 import static com.graphhopper.util.Parameters.Algorithms.DIJKSTRA_BI;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * @author Peter Karich
@@ -55,9 +56,10 @@ public class RoundTripRoutingTest {
     private final GHPoint ghPoint1 = new GHPoint(0, 0);
     private final GHPoint ghPoint2 = new GHPoint(1, 1);
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void lookup_throwsIfNumberOfPointsNotOne() {
-        RoundTripRouting.lookup(Arrays.asList(ghPoint1, ghPoint2), fastestWeighting, null, new RoundTripRouting.Params());
+        assertThrows(IllegalArgumentException.class, () -> RoundTripRouting.lookup(Arrays.asList(ghPoint1, ghPoint2),
+                new FiniteWeightFilter(fastestWeighting), null, new RoundTripRouting.Params()));
     }
 
     @Test
@@ -73,7 +75,8 @@ public class RoundTripRoutingTest {
         hints.putObject(Parameters.Algorithms.RoundTrip.POINTS, numPoints);
         hints.putObject(Parameters.Algorithms.RoundTrip.DISTANCE, roundTripDistance);
         LocationIndex locationIndex = new LocationIndexTree(g, new RAMDirectory()).prepareIndex();
-        List<Snap> stagePoints = RoundTripRouting.lookup(Collections.singletonList(start), fastestWeighting, locationIndex,
+        List<Snap> stagePoints = RoundTripRouting.lookup(Collections.singletonList(start),
+                new FiniteWeightFilter(fastestWeighting), locationIndex,
                 new RoundTripRouting.Params(hints, heading, 3));
         assertEquals(3, stagePoints.size());
         assertEquals(0, stagePoints.get(0).getClosestNode());
@@ -82,7 +85,7 @@ public class RoundTripRoutingTest {
 
         QueryGraph queryGraph = QueryGraph.create(g, stagePoints);
         List<Path> paths = RoundTripRouting.calcPaths(stagePoints, new FlexiblePathCalculator(queryGraph,
-                new RoutingAlgorithmFactorySimple(), new AlgorithmOptions(DIJKSTRA_BI, fastestWeighting, tMode))).paths;
+                new RoutingAlgorithmFactorySimple(), fastestWeighting, new AlgorithmOptions().setAlgorithm(DIJKSTRA_BI).setTraversalMode(tMode))).paths;
         // make sure the resulting paths are connected and form a round trip starting and ending at the start node 0
         assertEquals(2, paths.size());
         assertEquals(IntArrayList.from(0, 7, 6, 5), paths.get(0).calcNodes());
@@ -104,7 +107,7 @@ public class RoundTripRoutingTest {
         QueryGraph qGraph = QueryGraph.create(g, Arrays.asList(snap4, snap5));
 
         FlexiblePathCalculator pathCalculator = new FlexiblePathCalculator(
-                qGraph, new RoutingAlgorithmFactorySimple(), new AlgorithmOptions(DIJKSTRA_BI, fastestWeighting, tMode));
+                qGraph, new RoutingAlgorithmFactorySimple(), fastestWeighting, new AlgorithmOptions().setAlgorithm(DIJKSTRA_BI).setTraversalMode(tMode));
         List<Path> paths = RoundTripRouting.calcPaths(Arrays.asList(snap5, snap4, snap5), pathCalculator).paths;
         assertEquals(2, paths.size());
         assertEquals(IntArrayList.from(5, 6, 3), paths.get(0).calcNodes());
@@ -112,7 +115,7 @@ public class RoundTripRoutingTest {
 
         qGraph = QueryGraph.create(g, Arrays.asList(snap4, snap6));
         pathCalculator = new FlexiblePathCalculator(
-                qGraph, new RoutingAlgorithmFactorySimple(), new AlgorithmOptions(DIJKSTRA_BI, fastestWeighting, tMode));
+                qGraph, new RoutingAlgorithmFactorySimple(), fastestWeighting, new AlgorithmOptions().setAlgorithm(DIJKSTRA_BI).setTraversalMode(tMode));
         paths = RoundTripRouting.calcPaths(Arrays.asList(snap6, snap4, snap6), pathCalculator).paths;
         assertEquals(2, paths.size());
         assertEquals(IntArrayList.from(6, 3), paths.get(0).calcNodes());

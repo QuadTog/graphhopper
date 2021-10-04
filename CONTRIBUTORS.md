@@ -1,16 +1,13 @@
 # Contributors
 
-Most of the contributors are mentioned at Github as [Members](https://github.com/graphhopper?tab=members) or [Contributors](https://github.com/graphhopper/graphhopper/contributors). 
-
-Contributors that agree to the [project its CLA](https://www.graphhopper.com/individual-contributor-license-agreement/)
-state this as a comment via a separate, signed commit.
+Most of the contributors are mentioned at Github as [Members](https://github.com/graphhopper?tab=members) or [Contributors](https://github.com/graphhopper/graphhopper/contributors).
 
 Here is an overview:
 
  * AnahitaS, docs for Android, Android, Tomcat
  * andreaswolf, flag encoder versioning and more
  * andreylh, polygon for blocked area #1306
- * Anvoker, fixes like #1614
+ * Anvoker, fixes like #1614 and helped with JUnit 5 migration #1632
  * agouge, discussion and API refactoring
  * b3nn0, Android improvements
  * baumboi, path detail and landmark improvements
@@ -32,11 +29,14 @@ Here is an overview:
  * elibar, fix for alternative route calculation
  * fbonzon, several UI improvements like #615
  * florent-morel, improvements regarding fords, #320
- * fredao, translations 
+ * fredao, translations
+ * gberaudo, improvements regarding elevation
+ * GProbo, fixes like #2241
  * HarelM, improvements regarding elevation
  * HelgeKrueger, modularization of javascript, #590
  * henningvs, doc improvements
  * highsource, more efficient geometry update, UI fixes
+ * hoofstephan, bug fix   
  * IsNull, improvements like #708
  * Janekdererste, GUI for public transit
  * jansoe, many improvements regarding A* algorithm, forcing direction, roundabouts etc
@@ -48,6 +48,7 @@ Here is an overview:
  * kodonnell, adding support for CH and other algorithms (#60) and penalizing inner-link U-turns (#88)
  * legraina, improved docker for dockerhub
  * lmar, improved instructions
+ * matkoniecz, tweaking documentation
  * manueltimita, fixes like #1651
  * mathstpierre, fixes like #1753
  * michalmac, fixes like #1467

@@ -18,7 +18,7 @@
 package com.graphhopper.routing;
 
 import com.graphhopper.routing.ev.*;
-import com.graphhopper.routing.util.DefaultEdgeFilter;
+import com.graphhopper.routing.util.AccessFilter;
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
@@ -98,8 +98,8 @@ public class InstructionsFromEdges implements Path.EdgeVisitor {
         prevNode = -1;
         prevInRoundabout = false;
         prevName = null;
-        outEdgeExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.outEdges(encoder));
-        crossingExplorer = graph.createEdgeExplorer(DefaultEdgeFilter.allEdges(encoder));
+        outEdgeExplorer = graph.createEdgeExplorer(AccessFilter.outEdges(encoder.getAccessEnc()));
+        crossingExplorer = graph.createEdgeExplorer(AccessFilter.allEdges(encoder.getAccessEnc()));
     }
 
     /**
@@ -135,7 +135,7 @@ public class InstructionsFromEdges implements Path.EdgeVisitor {
         PointList wayGeo = edge.fetchWayGeometry(FetchMode.ALL);
         boolean isRoundabout = edge.get(roundaboutEnc);
 
-        if (wayGeo.getSize() <= 2) {
+        if (wayGeo.size() <= 2) {
             latitude = adjLat;
             longitude = adjLon;
         } else {
@@ -290,11 +290,11 @@ public class InstructionsFromEdges implements Path.EdgeVisitor {
 
         updatePointsAndInstruction(edge, wayGeo);
 
-        if (wayGeo.getSize() <= 2) {
+        if (wayGeo.size() <= 2) {
             doublePrevLat = prevLat;
             doublePrevLon = prevLon;
         } else {
-            int beforeLast = wayGeo.getSize() - 2;
+            int beforeLast = wayGeo.size() - 2;
             doublePrevLat = wayGeo.getLat(beforeLast);
             doublePrevLon = wayGeo.getLon(beforeLast);
         }

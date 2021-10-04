@@ -63,8 +63,8 @@ public final class MMapDataAccess extends AbstractDataAccess {
     private RandomAccessFile raFile;
     private List<MappedByteBuffer> segments = new ArrayList<>();
 
-    MMapDataAccess(String name, String location, ByteOrder order, boolean allowWrites) {
-        super(name, location, order);
+    MMapDataAccess(String name, String location, ByteOrder order, boolean allowWrites, int segmentSize) {
+        super(name, location, order, segmentSize);
         this.allowWrites = allowWrites;
     }
 
@@ -174,19 +174,8 @@ public final class MMapDataAccess extends AbstractDataAccess {
         }
         initRandomAccessFile();
         bytes = Math.max(10 * 4, bytes);
-        setSegmentSize(segmentSizeInBytes);
         ensureCapacity(bytes);
         return this;
-    }
-
-    @Override
-    public DataAccess copyTo(DataAccess da) {
-        // if(da instanceof MMapDataAccess) {
-        // TODO PERFORMANCE make copying into mmap a lot faster via bytebuffer
-        // also copying into RAMDataAccess could be faster via bytebuffer
-        // is a flush necessary then?
-        // }
-        return super.copyTo(da);
     }
 
     @Override
@@ -491,20 +480,6 @@ public final class MMapDataAccess extends AbstractDataAccess {
             cleanMappedByteBuffer(bb);
             segments.set(i, null);
         }
-    }
-
-    @Override
-    public void rename(String newName) {
-        if (!checkBeforeRename(newName)) {
-            return;
-        }
-        close();
-
-        super.rename(newName);
-        // 'reopen' with newName
-        raFile = null;
-        closed = false;
-        loadExisting();
     }
 
     @Override

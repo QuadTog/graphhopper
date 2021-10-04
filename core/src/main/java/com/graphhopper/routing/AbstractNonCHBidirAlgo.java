@@ -18,9 +18,7 @@
 package com.graphhopper.routing;
 
 import com.carrotsearch.hppc.IntObjectMap;
-import com.graphhopper.routing.util.DefaultEdgeFilter;
 import com.graphhopper.routing.util.EdgeFilter;
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
@@ -45,10 +43,7 @@ public abstract class AbstractNonCHBidirAlgo extends AbstractBidirAlgo implement
     protected final Graph graph;
     protected final NodeAccess nodeAccess;
     protected final Weighting weighting;
-    protected final FlagEncoder flagEncoder;
     protected EdgeExplorer edgeExplorer;
-    protected EdgeFilter inEdgeFilter;
-    protected EdgeFilter outEdgeFilter;
     protected EdgeFilter additionalEdgeFilter;
 
     public AbstractNonCHBidirAlgo(Graph graph, Weighting weighting, TraversalMode tMode) {
@@ -56,12 +51,9 @@ public abstract class AbstractNonCHBidirAlgo extends AbstractBidirAlgo implement
         this.weighting = weighting;
         if (weighting.hasTurnCosts() && !tMode.isEdgeBased())
             throw new IllegalStateException("Weightings supporting turn costs cannot be used with node-based traversal mode");
-        this.flagEncoder = weighting.getFlagEncoder();
         this.graph = graph;
         this.nodeAccess = graph.getNodeAccess();
         edgeExplorer = graph.createEdgeExplorer();
-        outEdgeFilter = DefaultEdgeFilter.outEdges(flagEncoder.getAccessEnc());
-        inEdgeFilter = DefaultEdgeFilter.inEdges(flagEncoder.getAccessEnc());
         int size = Math.min(Math.max(200, graph.getNodes() / 10), 150_000);
         initCollections(size);
     }
@@ -191,14 +183,9 @@ public abstract class AbstractNonCHBidirAlgo extends AbstractBidirAlgo implement
     }
 
     protected double calcWeight(EdgeIteratorState iter, SPTEntry currEdge, boolean reverse) {
-        // todo: for #1835 move access flag checks into weighting
-        final boolean access = reverse ? inEdgeFilter.accept(iter) : outEdgeFilter.accept(iter);
-        if (!access) {
-            return Double.POSITIVE_INFINITY;
-        }
         // note that for node-based routing the weights will be wrong in case the weighting is returning non-zero
         // turn weights, see discussion in #1960
-        return GHUtility.calcWeightWithTurnWeight(weighting, iter, reverse, currEdge.edge) + currEdge.getWeightOfVisitedPath();
+        return GHUtility.calcWeightWithTurnWeightWithAccess(weighting, iter, reverse, currEdge.edge) + currEdge.getWeightOfVisitedPath();
     }
 
     @Override

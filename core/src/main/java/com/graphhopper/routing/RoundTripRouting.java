@@ -21,6 +21,7 @@ import com.carrotsearch.hppc.IntHashSet;
 import com.carrotsearch.hppc.IntSet;
 import com.carrotsearch.hppc.cursors.IntCursor;
 import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.FiniteWeightFilter;
 import com.graphhopper.routing.util.tour.MultiPointTour;
 import com.graphhopper.routing.util.tour.TourStrategy;
 import com.graphhopper.routing.weighting.AvoidEdgesWeighting;
@@ -66,9 +67,8 @@ public class RoundTripRouting {
         }
     }
 
-    public static List<Snap> lookup(List<GHPoint> points, Weighting weighting, LocationIndex locationIndex, Params params) {
+    public static List<Snap> lookup(List<GHPoint> points, EdgeFilter edgeFilter, LocationIndex locationIndex, Params params) {
         // todo: no snap preventions for round trip so far
-        EdgeFilter edgeFilter = ViaRouting.createEdgeFilter(weighting);
         if (points.size() != 1)
             throw new IllegalArgumentException("For round trip calculation exactly one point is required");
 
@@ -151,12 +151,10 @@ public class RoundTripRouting {
         RoundTripCalculator(FlexiblePathCalculator pathCalculator) {
             this.pathCalculator = pathCalculator;
             // we make the path calculator use our avoid edges weighting
-            AvoidEdgesWeighting avoidPreviousPathsWeighting = new AvoidEdgesWeighting(pathCalculator.getAlgoOpts().getWeighting())
+            AvoidEdgesWeighting avoidPreviousPathsWeighting = new AvoidEdgesWeighting(pathCalculator.getWeighting())
                     .setEdgePenaltyFactor(5);
             avoidPreviousPathsWeighting.setAvoidedEdges(previousEdges);
-            AlgorithmOptions algoOpts = AlgorithmOptions.start(pathCalculator.getAlgoOpts()).
-                    weighting(avoidPreviousPathsWeighting).build();
-            pathCalculator.setAlgoOpts(algoOpts);
+            pathCalculator.setWeighting(avoidPreviousPathsWeighting);
         }
 
         Path calcPath(int from, int to) {

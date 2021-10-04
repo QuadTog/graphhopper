@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
+import static com.graphhopper.json.Statement.Keyword.*;
+
 class StatementDeserializer extends JsonDeserializer<Statement> {
     @Override
     public Statement deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
@@ -34,16 +36,17 @@ class StatementDeserializer extends JsonDeserializer<Statement> {
         if (Double.isNaN(value))
             throw new IllegalArgumentException("Value of operation " + jsonOp.getName() + " is not a number");
 
-        if (treeNode.has("if"))
-            return Statement.If(treeNode.get("if").asText(), jsonOp, value);
-        else if (treeNode.has("else if"))
-            return Statement.ElseIf(treeNode.get("else if").asText(), jsonOp, value);
-        else if (treeNode.has("else")) {
-            if (!treeNode.get("else").isNull())
-                throw new IllegalArgumentException("else cannot have expression but was " + treeNode.get("else"));
-            return Statement.Else(jsonOp, value);
+        if (treeNode.has(IF.getName()))
+            return Statement.If(treeNode.get(IF.getName()).asText(), jsonOp, value);
+        else if (treeNode.has(ELSEIF.getName()))
+            return Statement.ElseIf(treeNode.get(ELSEIF.getName()).asText(), jsonOp, value);
+        else if (treeNode.has(ELSE.getName())) {
+            JsonNode elseNode = treeNode.get(ELSE.getName());
+            if (elseNode.isNull() || elseNode.isValueNode() && elseNode.asText().isEmpty())
+                return Statement.Else(jsonOp, value);
+            throw new IllegalArgumentException("else cannot have expression but was " + treeNode.get(ELSE.getName()));
         }
 
-        throw new IllegalArgumentException("Cannot find if, else if or else for " + treeNode.toString());
+        throw new IllegalArgumentException("Cannot find if, else_if or else for " + treeNode.toString());
     }
 }
