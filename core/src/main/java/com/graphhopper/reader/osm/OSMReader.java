@@ -100,7 +100,8 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
     // smaller memory overhead for bigger data sets because of avoiding a "rehash"
     // remember how many times a node was used to identify tower nodes
     private LongIntMap osmNodeIdToInternalNodeMap;
-    private GHLongLongHashMap osmNodeIdToNodeFlagsMap;
+    private LongObjectMap<ReaderNode> osmNodesByID = new LongObjectScatterMap<>();
+    private LongSet barrierNodes = new LongScatterSet();
     private GHLongLongHashMap osmWayIdToRouteWeightMap;
     // stores osm way ids used by relations to identify which edge ids needs to be mapped later
     private GHLongHashSet osmWayIdSet = new GHLongHashSet();
@@ -129,7 +130,6 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         simplifyAlgo.setElevationMaxDistance(config.getElevationMaxWayPointDistance());
 
         osmNodeIdToInternalNodeMap = new GHLongIntBTree(200);
-        osmNodeIdToNodeFlagsMap = new GHLongLongHashMap(200, .5f);
         osmWayIdToRouteWeightMap = new GHLongLongHashMap(200, .5f);
         pillarInfo = new PillarInfo(nodeAccess.is3D(), ghStorage.getDirectory());
         tempRelFlags = encodingManager.createRelationFlags();
@@ -393,13 +393,12 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         int lastBarrier = -1;
         for (int i = 0; i < size; i++) {
             long nodeId = osmNodeIds.get(i);
-            long nodeFlags = getNodeFlagsMap().get(nodeId);
-            // barrier was spotted and the way is passable for that mode of travel
-            if (nodeFlags > 0) {
-                if (isOnePassable(encodingManager.getAccessEncFromNodeFlags(nodeFlags), edgeFlags)) {
-                    // remove barrier to avoid duplicates
-                    getNodeFlagsMap().put(nodeId, 0);
-
+            ReaderNode osmNode = osmNodesByID.get(nodeId);
+            long nodeFlags = osmNode != null ? (osmNode.hasTags() ? encodingManager.handleNodeTags(osmNode) : 0) : 0;
+            boolean isBarrier = nodeFlags > 0;
+            if (isBarrier) {
+                // barrier was spotted and the way is passable for that mode of travel
+                if (barrierNodes.add(nodeId) && isOnePassable(encodingManager.getAccessEncFromNodeFlags(nodeFlags), edgeFlags)) {
                     // create shadow node copy for zero length edge
                     long newNodeId = addBarrierNode(nodeId);
                     if (i > 0) {
@@ -514,12 +513,10 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
     protected void processNode(ReaderNode node) {
         addNode(node);
 
-        // analyze node tags for barriers
-        if (node.hasTags()) {
-            long nodeFlags = encodingManager.handleNodeTags(node);
-            if (nodeFlags != 0)
-                getNodeFlagsMap().put(node.getId(), nodeFlags);
-        }
+        ReaderNode existingNode = osmNodesByID.put(node.getId(), node);
+        if (existingNode != null)
+            LOGGER.warn("There are multiple OSM nodes with ID: " + node.getId() + ". " +
+                    "GraphHopper only considers the last one it finds");
 
         locations++;
     }
@@ -816,7 +813,8 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         encodingManager.releaseParsers();
         eleProvider.release();
         osmNodeIdToInternalNodeMap = null;
-        osmNodeIdToNodeFlagsMap = null;
+        osmNodesByID = null;
+        barrierNodes = null;
         osmWayIdToRouteWeightMap = null;
         osmWayIdSet = null;
         edgeIdToOsmWayIdMap = null;
@@ -934,10 +932,6 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         return osmNodeIdToInternalNodeMap;
     }
 
-    protected LongLongMap getNodeFlagsMap() {
-        return osmNodeIdToNodeFlagsMap;
-    }
-
     int getRelFlagsMapSize() {
         return osmWayIdToRouteWeightMap.size();
     }
@@ -983,7 +977,7 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
     private void printInfo(String str) {
         LOGGER.info("finished " + str + " processing." + " nodes: " + graph.getNodes()
                 + ", osmIdMap.size:" + getNodeMap().getSize() + ", osmIdMap:" + getNodeMap().getMemoryUsage() + "MB"
-                + ", nodeFlagsMap.size:" + getNodeFlagsMap().size() + ", relFlagsMap.size:" + getRelFlagsMapSize()
+                + ", osmNodesById.size:" + osmNodesByID.size() + ", relFlagsMap.size:" + getRelFlagsMapSize()
                 + ", zeroCounter:" + zeroCounter
                 + " " + Helper.getMemInfo());
     }
