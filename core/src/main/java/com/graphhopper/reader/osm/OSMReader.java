@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 import javax.xml.stream.XMLStreamException;
 import java.io.File;
 import java.io.IOException;
+import java.text.ParseException;
 import java.util.*;
 
 import static com.graphhopper.util.Helper.nf;
@@ -149,11 +150,18 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         if (!osmFile.exists())
             throw new IllegalStateException("Your specified OSM file does not exist:" + osmFile.getAbsolutePath());
 
+        // Preprocessing of OSM file to select nodes which are used for highways. This allows a more
+        // compact graph data structure.
         StopWatch sw1 = new StopWatch().start();
-        preProcess(osmFile);
+        LOGGER.info("Starting to process OSM file: '" + osmFile + "'");
+        readOSMFile(new Handler1(), osmFile);
         sw1.stop();
 
+        // Creates the graph with edges and nodes from the specified osm file.
         StopWatch sw2 = new StopWatch().start();
+        int tmp = (int) Math.max(getNodeMap().getSize() / 50, 100);
+        LOGGER.info("creating graph. Found nodes (pillar+tower):" + nf(getNodeMap().getSize()) + ", " + Helper.getMemInfo());
+        ghStorage.create(tmp);
         writeOsmToGraph(osmFile);
         sw2.stop();
 
@@ -162,61 +170,75 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
                 + "total:" + (int) (sw1.getSeconds() + sw2.getSeconds()) + "s");
     }
 
-    /**
-     * Preprocessing of OSM file to select nodes which are used for highways. This allows a more
-     * compact graph data structure.
-     */
-    void preProcess(File osmFile) {
-        LOGGER.info("Starting to process OSM file: '" + osmFile + "'");
+    private void readOSMFile(Handler1 handler, File osmFile) {
         try (OSMInput in = openOsmInputFile(osmFile)) {
-            long tmpWayCounter = 1;
-            long tmpRelationCounter = 1;
-            ReaderElement item;
-            while ((item = in.getNext()) != null) {
-                if (item.isType(ReaderElement.WAY)) {
-                    final ReaderWay way = (ReaderWay) item;
-                    boolean valid = filterWay(way);
-                    if (valid) {
-                        LongIndexedContainer wayNodes = way.getNodes();
-                        int s = wayNodes.size();
-                        for (int index = 0; index < s; index++) {
-                            prepareHighwayNode(wayNodes.get(index));
-                        }
-
-                        if (++tmpWayCounter % 10_000_000 == 0) {
-                            LOGGER.info(nf(tmpWayCounter) + " (preprocess), osmIdMap:" + nf(getNodeMap().getSize()) + " ("
-                                    + getNodeMap().getMemoryUsage() + "MB) " + Helper.getMemInfo());
-                        }
-                    }
-                } else if (item.isType(ReaderElement.RELATION)) {
-                    final ReaderRelation relation = (ReaderRelation) item;
-                    if (!relation.isMetaRelation() && relation.hasTag("type", "route"))
-                        prepareWaysWithRelationInfo(relation);
-
-                    if (relation.hasTag("type", "restriction")) {
-                        prepareRestrictionRelation(relation);
-                    }
-
-                    if (++tmpRelationCounter % 100_000 == 0) {
-                        LOGGER.info(nf(tmpRelationCounter) + " (preprocess), osmWayMap:" + nf(getRelFlagsMapSize())
-                                + ", " + Helper.getMemInfo());
-                    }
-                } else if (item.isType(ReaderElement.FILEHEADER)) {
-                    final OSMFileHeader fileHeader = (OSMFileHeader) item;
-                    osmDataDate = Helper.createFormatter().parse(fileHeader.getTag("timestamp"));
-                }
-
+            ReaderElement elem;
+            while ((elem = in.getNext()) != null) {
+                handler.handleElement(elem);
             }
         } catch (Exception ex) {
             throw new RuntimeException("Problem while parsing file", ex);
         }
     }
 
-    private void prepareRestrictionRelation(ReaderRelation relation) {
-        List<OSMTurnRelation> turnRelations = createTurnRelations(relation);
-        for (OSMTurnRelation turnRelation : turnRelations) {
-            getOsmWayIdSet().add(turnRelation.getOsmIdFrom());
-            getOsmWayIdSet().add(turnRelation.getOsmIdTo());
+    private interface ReaderElementHandler {
+        void handleElement(ReaderElement elem) throws ParseException;
+    }
+
+    private class Handler1 implements ReaderElementHandler {
+        long tmpWayCounter = 1;
+        long tmpRelationCounter = 1;
+
+        @Override
+        public void handleElement(ReaderElement elem) throws ParseException {
+            if (elem.isType(ReaderElement.WAY)) {
+                handleWay((ReaderWay) elem);
+            } else if (elem.isType(ReaderElement.RELATION)) {
+                handleRelation((ReaderRelation) elem);
+            } else if (elem.isType(ReaderElement.FILEHEADER)) {
+                handleFileHeader((OSMFileHeader) elem);
+            }
+        }
+
+        private void handleWay(ReaderWay way) {
+            if (!filterWay(way))
+                return;
+
+            LongIndexedContainer wayNodes = way.getNodes();
+            for (int i = 0; i < wayNodes.size(); i++) {
+                prepareHighwayNode(wayNodes.get(i));
+            }
+
+            if (++tmpWayCounter % 10_000_000 == 0) {
+                LOGGER.info(nf(tmpWayCounter) + " (preprocess), osmIdMap:" + nf(getNodeMap().getSize()) + " ("
+                        + getNodeMap().getMemoryUsage() + "MB) " + Helper.getMemInfo());
+            }
+        }
+
+        private void handleRelation(ReaderRelation relation) {
+            if (!relation.isMetaRelation() && relation.hasTag("type", "route"))
+                prepareWaysWithRelationInfo(relation);
+
+            if (relation.hasTag("type", "restriction")) {
+                prepareRestrictionRelation(relation);
+            }
+
+            if (++tmpRelationCounter % 100_000 == 0) {
+                LOGGER.info(nf(tmpRelationCounter) + " (preprocess), osmWayMap:" + nf(getRelFlagsMapSize())
+                        + ", " + Helper.getMemInfo());
+            }
+        }
+
+        private void handleFileHeader(OSMFileHeader item) throws ParseException {
+            osmDataDate = Helper.createFormatter().parse(item.getTag("timestamp"));
+        }
+
+        private void prepareRestrictionRelation(ReaderRelation relation) {
+            List<OSMTurnRelation> turnRelations = createTurnRelations(relation);
+            for (OSMTurnRelation turnRelation : turnRelations) {
+                getOsmWayIdSet().add(turnRelation.getOsmIdFrom());
+                getOsmWayIdSet().add(turnRelation.getOsmIdTo());
+            }
         }
     }
 
@@ -251,64 +273,74 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         return encodingManager.acceptWay(item, new EncodingManager.AcceptWay());
     }
 
-    /**
-     * Creates the graph with edges and nodes from the specified osm file.
-     */
-    private void writeOsmToGraph(File osmFile) {
-        int tmp = (int) Math.max(getNodeMap().getSize() / 50, 100);
-        LOGGER.info("creating graph. Found nodes (pillar+tower):" + nf(getNodeMap().getSize()) + ", " + Helper.getMemInfo());
-        ghStorage.create(tmp);
-
+    private class Handler2 implements ReaderElementHandler {
         long wayStart = -1;
         long relationStart = -1;
         long counter = 1;
-        try (OSMInput in = openOsmInputFile(osmFile)) {
-            LongIntMap nodeFilter = getNodeMap();
+        LongIntMap nodeFilter = getNodeMap();
 
-            ReaderElement item;
-            while ((item = in.getNext()) != null) {
-                switch (item.getType()) {
-                    case ReaderElement.NODE:
-                        if (nodeFilter.get(item.getId()) != EMPTY_NODE) {
-                            processNode((ReaderNode) item);
-                        }
-                        break;
-
-                    case ReaderElement.WAY:
-                        if (wayStart < 0) {
-                            LOGGER.info(nf(counter) + ", now parsing ways");
-                            wayStart = counter;
-                        }
-                        processWay((ReaderWay) item);
-                        break;
-                    case ReaderElement.RELATION:
-                        if (relationStart < 0) {
-                            LOGGER.info(nf(counter) + ", now parsing relations");
-                            relationStart = counter;
-                        }
-                        processRelation((ReaderRelation) item);
-                        break;
-                    case ReaderElement.FILEHEADER:
-                        break;
-                    default:
-                        throw new IllegalStateException("Unknown type " + item.getType());
-                }
-                if (++counter % 200_000_000 == 0) {
-                    LOGGER.info(nf(counter) + ", locs:" + nf(locations) + ", " + Helper.getMemInfo());
-                }
+        @Override
+        public void handleElement(ReaderElement elem) {
+            switch (elem.getType()) {
+                case ReaderElement.NODE:
+                    handleNode(elem);
+                    break;
+                case ReaderElement.WAY:
+                    handleWay((ReaderWay) elem);
+                    break;
+                case ReaderElement.RELATION:
+                    handleRelation((ReaderRelation) elem);
+                    break;
+                case ReaderElement.FILEHEADER:
+                    break;
+                default:
+                    throw new IllegalStateException("Unknown type " + elem.getType());
             }
+            if (++counter % 200_000_000 == 0) {
+                LOGGER.info(nf(counter) + ", locs:" + nf(locations) + ", " + Helper.getMemInfo());
+            }
+        }
 
+        private void handleNode(ReaderElement node) {
+            if (nodeFilter.get(node.getId()) != EMPTY_NODE) {
+                processNode((ReaderNode) node);
+            }
+        }
+
+        private void handleWay(ReaderWay elem) {
+            if (wayStart < 0) {
+                LOGGER.info(nf(counter) + ", now parsing ways");
+                wayStart = counter;
+            }
+            processWay(elem);
+        }
+
+        private void handleRelation(ReaderRelation elem) {
+            if (relationStart < 0) {
+                LOGGER.info(nf(counter) + ", now parsing relations");
+                relationStart = counter;
+            }
+            processRelation(elem);
+        }
+
+    }
+
+    private void writeOsmToGraph(File osmFile) {
+        Handler2 handler = new Handler2();
+        try (OSMInput in = openOsmInputFile(osmFile)) {
+            ReaderElement elem;
+            while ((elem = in.getNext()) != null) {
+                handler.handleElement(elem);
+            }
             if (in.getUnprocessedElements() > 0)
                 throw new IllegalStateException("Still unprocessed elements in reader queue " + in.getUnprocessedElements());
-
             // logger.info("storage nodes:" + storage.nodes() + " vs. graph nodes:" + storage.getGraph().nodes());
         } catch (Exception ex) {
             throw new RuntimeException("Couldn't process file " + osmFile + ", error: " + ex.getMessage(), ex);
         }
-
         finishedReading();
         if (graph.getNodes() == 0)
-            throw new RuntimeException("Graph after reading OSM must not be empty. Read " + counter + " items and " + locations + " locations");
+            throw new RuntimeException("Graph after reading OSM must not be empty. Read " + handler.counter + " items and " + locations + " locations");
     }
 
     protected OSMInput openOsmInputFile(File osmFile) throws XMLStreamException, IOException {
