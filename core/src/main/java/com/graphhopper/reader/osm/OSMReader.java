@@ -44,6 +44,7 @@ import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
 import java.util.*;
+import java.util.function.Predicate;
 
 import static com.graphhopper.util.Helper.nf;
 import static java.util.Collections.emptyList;
@@ -201,7 +202,8 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         }
 
         private void handleWay(ReaderWay way) {
-            if (!filterWay(way))
+            Predicate<ReaderWay> wayFilter = OSMReader.this::filterWay;
+            if (!wayFilter.test(way))
                 return;
 
             LongIndexedContainer wayNodes = way.getNodes();
@@ -261,16 +263,16 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
      *
      * @return true the current xml entry is a way entry and has nodes
      */
-    boolean filterWay(ReaderWay item) {
+    boolean filterWay(ReaderWay way) {
         // ignore broken geometry
-        if (item.getNodes().size() < 2)
+        if (way.getNodes().size() < 2)
             return false;
 
         // ignore multipolygon geometry
-        if (!item.hasTags())
+        if (!way.hasTags())
             return false;
 
-        return encodingManager.acceptWay(item, new EncodingManager.AcceptWay());
+        return encodingManager.acceptWay(way, new EncodingManager.AcceptWay());
     }
 
     private class Handler2 implements ReaderElementHandler {
@@ -302,17 +304,27 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         }
 
         private void handleNode(ReaderElement node) {
-            if (nodeFilter.get(node.getId()) != EMPTY_NODE) {
-                processNode((ReaderNode) node);
+            if (nodeFilter.get(node.getId()) == EMPTY_NODE) {
+                return;
             }
+            addNode((ReaderNode) node);
+
+            // analyze node tags for barriers
+            if (node.hasTags()) {
+                long nodeFlags = encodingManager.handleNodeTags((ReaderNode) node);
+                if (nodeFlags != 0)
+                    getNodeFlagsMap().put(node.getId(), nodeFlags);
+            }
+
+            locations++;
         }
 
-        private void handleWay(ReaderWay elem) {
+        private void handleWay(ReaderWay way) {
             if (wayStart < 0) {
                 LOGGER.info(nf(counter) + ", now parsing ways");
                 wayStart = counter;
             }
-            processWay(elem);
+            processWay(way);
         }
 
         private void handleRelation(ReaderRelation elem) {
@@ -351,18 +363,10 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
      * Process properties, encode flags and create edges for the way.
      */
     protected void processWay(ReaderWay way) {
-        if (way.getNodes().size() < 2)
+        Predicate<ReaderWay> wayFilter = OSMReader.this::filterWay;
+        if (!wayFilter.test(way))
             return;
 
-        // ignore multipolygon geometry
-        if (!way.hasTags())
-            return;
-
-        long wayOsmId = way.getId();
-
-        EncodingManager.AcceptWay acceptWay = new EncodingManager.AcceptWay();
-        if (!encodingManager.acceptWay(way, acceptWay))
-            return;
 
         IntsRef relationFlags = getRelFlagsMap(way.getId());
 
@@ -415,10 +419,12 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
 
         // also add all custom areas as artificial tag
         way.setTag("custom_areas", customAreas);
+        EncodingManager.AcceptWay acceptWay = new EncodingManager.AcceptWay();
         IntsRef edgeFlags = encodingManager.handleWayTags(way, acceptWay, relationFlags);
         if (edgeFlags.isEmpty())
             return;
 
+        long wayOsmId = way.getId();
         List<EdgeIteratorState> createdEdges = new ArrayList<>();
         // look for barriers along the way
         final int size = osmNodeIds.size();
@@ -541,19 +547,6 @@ public class OSMReader implements TurnCostParser.ExternalInternalMap {
         } else
             // e.g. if id is not handled from preprocessing (e.g. was ignored via isInBounds)
             return Double.NaN;
-    }
-
-    protected void processNode(ReaderNode node) {
-        addNode(node);
-
-        // analyze node tags for barriers
-        if (node.hasTags()) {
-            long nodeFlags = encodingManager.handleNodeTags(node);
-            if (nodeFlags != 0)
-                getNodeFlagsMap().put(node.getId(), nodeFlags);
-        }
-
-        locations++;
     }
 
     boolean addNode(ReaderNode node) {
